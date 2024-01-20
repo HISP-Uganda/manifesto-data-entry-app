@@ -16,15 +16,16 @@
         "concurrently": "^8.1.0"
     },
     "dependencies": {
-        "@dhis2/app-runtime": "^3.10.2",
-        "cors": "^2.8.5",
-        "framer-motion": "4.1.17",
-        "http-proxy-middleware": "^2.0.6",
-        "express": "^4.18.2",
         "@chakra-ui/icons": "^1.1.7",
         "@chakra-ui/react": "^1.8.9",
-        "chakra-react-select": "^3.1.2",
+        "@dhis2/app-runtime": "^3.10.2",
         "@emotion/react": "^11.7.1",
-        "@emotion/styled": "^11.6.0"
+        "@emotion/styled": "^11.6.0",
+        "@tanstack/react-query": "^4.24.4",
+        "chakra-react-select": "^3.1.2",
+        "cors": "^2.8.5",
+        "express": "^4.18.2",
+        "framer-motion": "4.1.17",
+        "http-proxy-middleware": "^2.0.6"
     }
 }
