@@ -1,8 +1,9 @@
 import { Box, Spinner, Table, Tbody, Td, Tr, Stack } from "@chakra-ui/react";
 import React, { useState } from "react";
 import { useInitial } from "../Queries";
-import { DataElementGroupSet } from "../interfaces";
+import { DataElementGroupSet, Commitment } from "../interfaces";
 import Tab1 from "./Tab1";
+import { groupBy } from "lodash";
 interface Row {
     code: string;
     dataElement: string;
@@ -20,7 +21,7 @@ interface TabContent {
 
 export const EntryForm = () => {
     const { isLoading, isError, isSuccess, error, data } = useInitial();
-    const [selected, setSelected] = useState<DataElementGroupSet | undefined>();
+    const [selected, setSelected] = useState<Array<Commitment>>([]);
     if (isError) return <pre>{JSON.stringify(error)}</pre>;
     if (isLoading) return <Spinner />;
     if (isSuccess && data)
@@ -44,16 +45,31 @@ export const EntryForm = () => {
                             <Tr>
                                 <Td valign="top">
                                     <div className="tab">
-                                        {data.map((degs) => (
+                                        {Object.entries(
+                                            groupBy(
+                                                data.commitments,
+                                                "dataElementGroupSetId"
+                                            )
+                                        ).map(([id, group]) => (
                                             <button
-                                                key={degs.id}
+                                                key={id}
                                                 className="tablinks"
                                                 id="defaultOpen"
                                                 onClick={() =>
-                                                    setSelected(() => degs)
+                                                    setSelected(() =>
+                                                        group.filter((g) => {
+                                                            if (data.isAdmin)
+                                                                return true;
+                                                            return (
+                                                                data.organisationUnits.indexOf(
+                                                                    g.voteId
+                                                                ) !== -1
+                                                            );
+                                                        })
+                                                    )
                                                 }
                                             >
-                                                {degs.name}
+                                                {group[0].keyResultsArea}
                                             </button>
                                         ))}
                                     </div>
@@ -61,7 +77,7 @@ export const EntryForm = () => {
                             </Tr>
                         </Tbody>
                     </Table>
-                    <Tab1 degs={selected} />
+                    <Tab1 commitments={selected} isAdmin={data.isAdmin} />
                 </Stack>
             </Stack>
         );
