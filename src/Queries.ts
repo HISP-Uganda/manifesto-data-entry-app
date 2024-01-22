@@ -1,6 +1,6 @@
 import { useDataEngine } from "@dhis2/app-runtime";
 import { useQuery } from "@tanstack/react-query";
-import { Commitment } from "./interfaces";
+import { Commitment, DataSetData } from "./interfaces";
 
 export const useInitial = () => {
     const engine = useDataEngine();
@@ -26,11 +26,46 @@ export const useInitial = () => {
                 },
             },
         });
-
+        const isAdmin = organisationUnits[0].level === 2;
+        const ous = organisationUnits.map((o: any) => o.id);
+        console.log(commitments);
         return {
-            commitments,
-            organisationUnits: organisationUnits.map((o: any) => o.id),
-            isAdmin: false,
+            commitments: isAdmin
+                ? commitments
+                : commitments.filter((c: any) => ous.indexOf(c.voteId) !== -1),
+            organisationUnits: ous,
+            isAdmin,
         };
     });
+};
+
+export const useDataSetData = ({
+    selectedPeriod,
+    orgUnits = [],
+}: Partial<{
+    selectedPeriod: string;
+    orgUnits: string[];
+}>) => {
+    const engine = useDataEngine();
+    return useQuery<DataSetData, Error>(
+        ["data-set-data", selectedPeriod, ...orgUnits],
+        async () => {
+            if (selectedPeriod && orgUnits.length > 0) {
+                const { data }: any = await engine.query({
+                    data: {
+                        resource: `dataValueSets.json?period=${selectedPeriod}&dataSet=fFaTViPsQBs&${orgUnits
+                            .map((o) => `orgUnit=${o}`)
+                            .join("&")}&children=true`,
+                    },
+                });
+                return data;
+            }
+            return {
+                dataSet: "fFaTViPsQBs",
+                period: selectedPeriod,
+                orgUnit: orgUnits[0],
+                dataValues: [],
+            };
+        }
+    );
 };

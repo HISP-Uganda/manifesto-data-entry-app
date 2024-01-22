@@ -2,22 +2,6 @@ body {
     font-family: "Lato", sans-serif;
 }
 
-input.entryfield {
-    width: 60% !important;
-}
-
-input.indicator {
-    width: 60% !important;
-}
-
-input.dataelementtotal {
-    width: 60% !important;
-}
-
-textarea.textInput_textArea__3llMu {
-    height: 50% !important;
-}
-
 /* Style the tab */
 
 .tab {
@@ -69,7 +53,7 @@ textarea.textInput_textArea__3llMu {
     font-weight: bold;
 }
 
-#customers {
+/* #customers {
     font-family: Arial, Helvetica, sans-serif;
     border-collapse: collapse;
     width: 100%;
@@ -95,4 +79,4 @@ textarea.textInput_textArea__3llMu {
     text-align: left;
     background-color: #a4d2a3;
     color: white;
-}
+} */

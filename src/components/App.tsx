@@ -21,8 +21,15 @@ const customTheme = extendTheme({
             //     borderBottom: "2px solid",
             //     borderColor: "green.400",
             // },
-            td: {
-                border: "1px solid red",
+            // td: {
+            //     borderS: "3px solid gray",
+            // },
+            Table: {
+                Td: {
+                    borderStyle: "solid",
+                    borderColor: "green.400",
+                    borderWidth: "2px",
+                },
             },
         },
     },
