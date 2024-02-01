@@ -1,4 +1,4 @@
-import { Box, Spinner, Stack, Table, Tbody, Td, Tr } from "@chakra-ui/react";
+import { Box, Spinner, Stack, Table, Tbody, Td, Tr, Image, Button, Grid, GridItem, } from "@chakra-ui/react";
 import { groupBy } from "lodash";
 import React, { useState } from "react";
 import { Commitment } from "../interfaces";
@@ -12,28 +12,30 @@ export const EntryForm = () => {
     if (isLoading) return <Spinner />;
     if (isSuccess && data)
         return (
-            <Stack p="20px">
-                <Box fontSize="20px" color="white" bgColor="#669872" h="40px">
-                    <strong>
-                        Manifesto Implementation Scorecard 2021 - 2026
-                    </strong>
-                </Box>
-                <Stack spacing="20px" direction="row">
-                    <Box w="350px" maxW="350px" minW="350px">
-                        <Table
-                            cellPadding="0"
-                            cellSpacing="0"
-                            style={{ borderCollapse: "collapse" }}
-                        >
+            <Grid templateRows="48px 1fr" gap={4} p="20px">
+                <Stack direction="row" justifyContent="space-between" alignItems="center" h="48px" >
+                    <Stack direction="row" bgColor="white" position="sticky" left="0" top="10" zIndex="sticky">
+                        <Box width="250px" height="60px">
+                            <Image src='https://manifesto.go.ug/wp-content/uploads/2020/06/4.png' alt='Manifesto Logo' />
+                        </Box>
+                        <Box fontSize="25px" h="30px" mt="20px">
+                            <strong>Manifesto Implementation Tracker (2021 - 2026)</strong>
+                        </Box>
+                    </Stack>
+                    <Stack>
+                        <Button colorScheme="blue" as="a" href="https://dev.ndpme.go.ug/ndpdb/api/apps/Manifesto-Dashboard" >Manifesto Dashboard</Button>
+                    </Stack>
+                </Stack>
+
+                <Grid templateColumns="repeat(12, 1fr)">
+                    <GridItem colSpan={2} >
+                        <Table cellPadding="0" cellSpacing="0" style={{ borderCollapse: "collapse" }}>
                             <Tbody>
                                 <Tr>
                                     <Td valign="top">
                                         <div className="tab">
                                             {Object.entries(
-                                                groupBy(
-                                                    data.commitments,
-                                                    "dataElementGroupSetId"
-                                                )
+                                                groupBy(data.commitments, "dataElementGroupSetId")
                                             ).map(([id, group]) => (
                                                 <button
                                                     key={id}
@@ -41,19 +43,10 @@ export const EntryForm = () => {
                                                     id="defaultOpen"
                                                     onClick={() =>
                                                         setSelected(() =>
-                                                            group.filter(
-                                                                (g) => {
-                                                                    if (
-                                                                        data.isAdmin
-                                                                    )
-                                                                        return true;
-                                                                    return (
-                                                                        data.organisationUnits.indexOf(
-                                                                            g.voteId
-                                                                        ) !== -1
-                                                                    );
-                                                                }
-                                                            )
+                                                            group.filter((g) => {
+                                                                if (data.isAdmin) return true;
+                                                                return data.organisationUnits.indexOf(g.voteId) !== -1;
+                                                            })
                                                         )
                                                     }
                                                 >
@@ -65,16 +58,18 @@ export const EntryForm = () => {
                                 </Tr>
                             </Tbody>
                         </Table>
-                    </Box>
-                    <Box flex={1}>
+                    </GridItem>
+                    <GridItem colSpan={10}>
                         <Tab1
                             commitments={selected}
                             isAdmin={data.isAdmin}
                             orgUnits={data.organisationUnits}
                         />
-                    </Box>
-                </Stack>
-            </Stack>
+                    </GridItem>
+
+                </Grid>
+
+            </Grid>
         );
 
     return null;
