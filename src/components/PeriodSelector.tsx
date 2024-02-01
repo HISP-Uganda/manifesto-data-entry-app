@@ -28,12 +28,14 @@ export default function PeriodSelector({
                 locale: "en",
             })
         );
-        return () => { };
+        return () => {};
     }, [year]);
 
     return (
         <Stack direction="row" w="100%" spacing="20px" alignItems="center">
-            <Text fontWeight="extrabold" fontSize="2xl">Period</Text>
+            <Text fontWeight="extrabold" fontSize="2xl">
+                Period
+            </Text>
             <Box w="300px">
                 <Select<Option, false, GroupBase<Option>>
                     isMulti={false}
@@ -52,8 +54,6 @@ export default function PeriodSelector({
                     onChange={(value) => setSelectedPeriod(() => value?.value)}
                 />
             </Box>
-            {/* <Button onClick={() => onYearChange(-1)}>Prev</Button>
-            <Button onClick={() => onYearChange(+1)}>Next</Button> */}
         </Stack>
     );
 }

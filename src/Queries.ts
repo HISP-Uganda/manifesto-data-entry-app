@@ -22,13 +22,12 @@ export const useInitial = () => {
             units: {
                 resource: "me.json",
                 params: {
-                    fields: "organisationUnits[id,code,name,level]",
+                    fields: "organisationUnits[id,code,name,level],name",
                 },
             },
         });
         const isAdmin = organisationUnits[0].level === 2;
         const ous = organisationUnits.map((o: any) => o.id);
-        console.log(commitments);
         return {
             commitments: isAdmin
                 ? commitments
@@ -58,6 +57,8 @@ export const useDataSetData = ({
                             .join("&")}&children=true`,
                     },
                 });
+                console.log(data);
+
                 return data;
             }
             return {
@@ -65,6 +66,7 @@ export const useDataSetData = ({
                 period: selectedPeriod,
                 orgUnit: orgUnits[0],
                 dataValues: [],
+                completeDate: null,
             };
         }
     );
