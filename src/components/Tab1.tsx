@@ -14,7 +14,7 @@ import {
 } from "@chakra-ui/react";
 import { useDataEngine } from "@dhis2/app-runtime";
 import { generateFixedPeriods } from "@dhis2/multi-calendar-dates";
-import { groupBy } from "lodash";
+import { groupBy, uniq } from "lodash";
 import React, { ChangeEvent, FocusEvent, useEffect, useState } from "react";
 import { GroupBase, Select, ChakraStylesConfig } from "chakra-react-select";
 import { Commitment, Option } from "../interfaces";
@@ -72,7 +72,7 @@ export default function Tab1({
                 }
             );
         }
-        return () => { };
+        return () => {};
     }, [data]);
 
     const postData = async (data: {
@@ -102,6 +102,25 @@ export default function Tab1({
             ...prev,
             [`${data.de}-${data.co}-${data.ou}`]: "",
         }));
+    };
+    const completeDataSet = async () => {
+        for (const voteId of uniq(commitments.map(({ voteId }) => voteId))) {
+            const mutation: any = {
+                type: "create",
+                resource: "completeDataSetRegistrations",
+                data: {
+                    completeDataSetRegistrations: [
+                        {
+                            dataSet: "fFaTViPsQBs",
+                            period: selectedPeriod,
+                            organisationUnit: voteId,
+                            completed: true,
+                        },
+                    ],
+                },
+            };
+            await engine.mutate(mutation);
+        }
     };
 
     const chakraStyles: ChakraStylesConfig<Option, false, GroupBase<Option>> = {
@@ -137,9 +156,9 @@ export default function Tab1({
     };
 
     return (
-        <Stack >
+        <Stack>
             <Stack direction="row" h="48px" minH="48px" maxH="48px">
-                <Stack ml="2">
+                <Stack ml="2" zIndex={20}>
                     <PeriodSelector
                         selectedPeriod={selectedPeriod}
                         onYearChange={onYearChange}
@@ -150,10 +169,26 @@ export default function Tab1({
                     />
                 </Stack>
                 <Stack direction="row" pl="10" spacing="10">
-                    <Text fontWeight="extrabold" fontSize="2xl">Legend :</Text>
-                    <Text color="green.500" fontWeight="extrabold" fontSize="2xl">Achieved</Text>
-                    <Text color="yellow.500" fontWeight="extrabold" fontSize="2xl">Commenced</Text>
-                    <Text color="red.500" fontWeight="extrabold" fontSize="2xl">Not implemented</Text>
+                    <Text fontWeight="extrabold" fontSize="2xl">
+                        Legend :
+                    </Text>
+                    <Text
+                        color="green.500"
+                        fontWeight="extrabold"
+                        fontSize="2xl"
+                    >
+                        Achieved
+                    </Text>
+                    <Text
+                        color="yellow.500"
+                        fontWeight="extrabold"
+                        fontSize="2xl"
+                    >
+                        Commenced
+                    </Text>
+                    <Text color="red.500" fontWeight="extrabold" fontSize="2xl">
+                        Not implemented
+                    </Text>
                 </Stack>
             </Stack>
             {isError && <pre>{JSON.stringify(error, null, 2)}</pre>}
@@ -161,21 +196,28 @@ export default function Tab1({
             {isSuccess && (
                 <Box h="calc(100vh - 144px - 80px)" overflow="auto">
                     <Table size="sm" flex={1}>
-                        <Thead bgColor="#019696" color="white" position="sticky" top="0" zIndex="sticky" boxShadow="md">
-                            <Tr fontWeight="bold" >
+                        <Thead
+                            bgColor="#019696"
+                            color="white"
+                            position="sticky"
+                            top="0"
+                            zIndex={10}
+                            boxShadow="md"
+                        >
+                            <Tr fontWeight="bold">
                                 <Td width="40px">
                                     {commitments[0]?.keyResultsArea}
                                 </Td>
                                 <Td w="100px">code</Td>
                                 <Td w="500px" minW="500px" maxW="500px">
                                     Data element
-                            </Td>
+                                </Td>
                                 <Td w="50px">MDA</Td>
                                 <Td>Performance</Td>
                                 <Td w="90px">
                                     <p>
                                         Budget <br /> (Ugx Bn)
-                                </p>
+                                    </p>
                                 </Td>
                                 <Td w="140px">Score</Td>
                                 <Td>Comments</Td>
@@ -200,211 +242,229 @@ export default function Tab1({
                                         },
                                         index
                                     ) => (
-                                            <Tr>
-                                                {index === 0 && (
-                                                    <Td rowSpan={groups.length}>
-                                                        {subKeyResultsArea}
-                                                    </Td>
+                                        <Tr>
+                                            {index === 0 && (
+                                                <Td rowSpan={groups.length}>
+                                                    {subKeyResultsArea}
+                                                </Td>
+                                            )}
+                                            <Td>
+                                                {String(scoreCode).replace(
+                                                    "SC-",
+                                                    ""
                                                 )}
-                                                <Td>
-                                                    {String(scoreCode).replace(
-                                                        "SC-",
-                                                        ""
-                                                    )}
-                                                </Td>
-                                                <Td>{commitment}</Td>
-                                                <Td>{MDAs}</Td>
-                                                <Td>
-                                                    <Textarea
-                                                        isDisabled={isAdmin}
-                                                        id="YuQ3dvY57PQ-b35egsIMRiP-val"
-                                                        name="entryfield"
-                                                        border="3px solid yellow"
-                                                        bg={
-                                                            backgrounds[
+                                            </Td>
+                                            <Td>{commitment}</Td>
+                                            <Td>{MDAs}</Td>
+                                            <Td>
+                                                <Textarea
+                                                    isDisabled={
+                                                        isAdmin ||
+                                                        data?.completeDate
+                                                    }
+                                                    id="YuQ3dvY57PQ-b35egsIMRiP-val"
+                                                    name="entryfield"
+                                                    border="3px solid yellow"
+                                                    bg={
+                                                        backgrounds[
                                                             `${performanceId}-b35egsIMRiP-${voteId}`
-                                                            ]
-                                                        }
-                                                        title={commitment}
-                                                        value={
-                                                            values[
+                                                        ]
+                                                    }
+                                                    title={commitment}
+                                                    value={
+                                                        values[
                                                             `${performanceId}-b35egsIMRiP-${voteId}`
-                                                            ]
+                                                        ]
+                                                    }
+                                                    onChange={(
+                                                        e: ChangeEvent<HTMLTextAreaElement>
+                                                    ) => {
+                                                        e.persist();
+                                                        setValues((prev) => ({
+                                                            ...prev,
+                                                            [`${performanceId}-b35egsIMRiP-${voteId}`]:
+                                                                e.target.value,
+                                                        }));
+                                                    }}
+                                                    onBlur={(
+                                                        e: FocusEvent<HTMLTextAreaElement>
+                                                    ) => {
+                                                        e.persist();
+                                                        if (selectedPeriod) {
+                                                            postData({
+                                                                de: performanceId,
+                                                                co: "b35egsIMRiP",
+                                                                ou: voteId,
+                                                                ds: "fFaTViPsQBs",
+                                                                value: e.target
+                                                                    .value,
+                                                                pe: selectedPeriod,
+                                                            });
                                                         }
-                                                        onChange={(
-                                                            e: ChangeEvent<HTMLTextAreaElement>
-                                                        ) => {
-                                                            e.persist();
-                                                            setValues((prev) => ({
-                                                                ...prev,
-                                                                [`${performanceId}-b35egsIMRiP-${voteId}`]:
-                                                                    e.target.value,
-                                                            }));
-                                                        }}
-                                                        onBlur={(
-                                                            e: FocusEvent<HTMLTextAreaElement>
-                                                        ) => {
-                                                            e.persist();
-                                                            if (selectedPeriod) {
-                                                                postData({
-                                                                    de: performanceId,
-                                                                    co: "b35egsIMRiP",
-                                                                    ou: voteId,
-                                                                    ds: "fFaTViPsQBs",
-                                                                    value: e.target
-                                                                        .value,
-                                                                    pe: selectedPeriod,
-                                                                });
-                                                            }
-                                                        }}
-                                                    />
-                                                </Td>
-                                                <Td>
-                                                    <Input
-                                                        bg={
-                                                            backgrounds[
+                                                    }}
+                                                />
+                                            </Td>
+                                            <Td>
+                                                <Input
+                                                    bg={
+                                                        backgrounds[
                                                             `${budgetId}-pXpEOcDkwjV-${voteId}`
-                                                            ]
+                                                        ]
+                                                    }
+                                                    isDisabled={
+                                                        isAdmin ||
+                                                        data?.completeDate
+                                                    }
+                                                    id="RlkUJj1WAs4-pXpEOcDkwjV-val"
+                                                    name="entryfield"
+                                                    title={commitment}
+                                                    value={
+                                                        values[
+                                                            `${budgetId}-pXpEOcDkwjV-${voteId}`
+                                                        ]
+                                                    }
+                                                    onChange={(
+                                                        e: ChangeEvent<HTMLInputElement>
+                                                    ) => {
+                                                        e.persist();
+                                                        setValues((prev) => ({
+                                                            ...prev,
+                                                            [`${budgetId}-pXpEOcDkwjV-${voteId}`]:
+                                                                e.target.value,
+                                                        }));
+                                                    }}
+                                                    onBlur={(
+                                                        e: FocusEvent<HTMLInputElement>
+                                                    ) => {
+                                                        e.persist();
+                                                        if (selectedPeriod) {
+                                                            postData({
+                                                                de: budgetId,
+                                                                co: "pXpEOcDkwjV",
+                                                                ou: voteId,
+                                                                ds: "fFaTViPsQBs",
+                                                                value: e.target
+                                                                    .value,
+                                                                pe: selectedPeriod,
+                                                            });
                                                         }
-                                                        isDisabled={isAdmin}
-                                                        id="RlkUJj1WAs4-pXpEOcDkwjV-val"
-                                                        name="entryfield"
-                                                        title={commitment}
-                                                        value={
+                                                    }}
+                                                />
+                                            </Td>
+                                            <Td>
+                                                <Select<
+                                                    Option,
+                                                    false,
+                                                    GroupBase<Option>
+                                                >
+                                                    chakraStyles={chakraStyles}
+                                                    isDisabled={
+                                                        !isAdmin ||
+                                                        data?.completeDate
+                                                    }
+                                                    options={scores}
+                                                    size="sm"
+                                                    colorScheme="blue"
+                                                    value={scores.find(
+                                                        ({ value }) =>
+                                                            value ===
                                                             values[
-                                                            `${budgetId}-pXpEOcDkwjV-${voteId}`
-                                                            ]
-                                                        }
-                                                        onChange={(
-                                                            e: ChangeEvent<HTMLInputElement>
-                                                        ) => {
-                                                            e.persist();
-                                                            setValues((prev) => ({
-                                                                ...prev,
-                                                                [`${budgetId}-pXpEOcDkwjV-${voteId}`]:
-                                                                    e.target.value,
-                                                            }));
-                                                        }}
-                                                        onBlur={(
-                                                            e: FocusEvent<HTMLInputElement>
-                                                        ) => {
-                                                            e.persist();
-                                                            if (selectedPeriod) {
-                                                                postData({
-                                                                    de: budgetId,
-                                                                    co: "pXpEOcDkwjV",
-                                                                    ou: voteId,
-                                                                    ds: "fFaTViPsQBs",
-                                                                    value: e.target
-                                                                        .value,
-                                                                    pe: selectedPeriod,
-                                                                });
-                                                            }
-                                                        }}
-                                                    />
-                                                </Td>
-                                                <Td>
-                                                    <Select<
-                                                        Option,
-                                                        false,
-                                                        GroupBase<Option>
-                                                    >
-                                                        chakraStyles={chakraStyles}
-                                                        isDisabled={!isAdmin}
-                                                        options={scores}
-                                                        size="sm"
-                                                        colorScheme="blue"
-                                                        value={scores.find(
-                                                            ({ value }) =>
-                                                                value ===
-                                                                values[
                                                                 `${scoreId}-G5EzBzyQXD9-${voteId}`
-                                                                ]
-                                                        )}
-                                                        onChange={(value) => {
-                                                            setValues((prev) => ({
-                                                                ...prev,
-                                                                [`${scoreId}-G5EzBzyQXD9-${voteId}`]:
-                                                                    value?.value ?? "",
-                                                            }));
-                                                            if (
-                                                                selectedPeriod &&
-                                                                value
-                                                            ) {
-                                                                postData({
-                                                                    de: scoreId,
-                                                                    co: "G5EzBzyQXD9",
-                                                                    ou: voteId,
-                                                                    ds: "fFaTViPsQBs",
-                                                                    value: value.value,
-                                                                    pe: selectedPeriod,
-                                                                });
-                                                            }
-                                                        }}
-                                                        tagVariant="solid"
-                                                    />
-                                                </Td>
-                                                <Td>
-                                                    <Textarea
-                                                        border="3px solid yellow"
-                                                        value={
-                                                            values[
-                                                            `${commentId}-s3PFBx7asUX-${voteId}`
                                                             ]
+                                                    )}
+                                                    onChange={(value) => {
+                                                        setValues((prev) => ({
+                                                            ...prev,
+                                                            [`${scoreId}-G5EzBzyQXD9-${voteId}`]:
+                                                                value?.value ??
+                                                                "",
+                                                        }));
+                                                        if (
+                                                            selectedPeriod &&
+                                                            value
+                                                        ) {
+                                                            postData({
+                                                                de: scoreId,
+                                                                co: "G5EzBzyQXD9",
+                                                                ou: voteId,
+                                                                ds: "fFaTViPsQBs",
+                                                                value: value.value,
+                                                                pe: selectedPeriod,
+                                                            });
                                                         }
-                                                        bg={
-                                                            backgrounds[
+                                                    }}
+                                                    tagVariant="solid"
+                                                />
+                                            </Td>
+                                            <Td>
+                                                <Textarea
+                                                    border="3px solid yellow"
+                                                    value={
+                                                        values[
                                                             `${commentId}-s3PFBx7asUX-${voteId}`
-                                                            ]
+                                                        ]
+                                                    }
+                                                    bg={
+                                                        backgrounds[
+                                                            `${commentId}-s3PFBx7asUX-${voteId}`
+                                                        ]
+                                                    }
+                                                    w="100%"
+                                                    isDisabled={
+                                                        !isAdmin ||
+                                                        data?.completeDate
+                                                    }
+                                                    id="cYAkzzXVMAN-s3PFBx7asUX-val"
+                                                    name="entryfield"
+                                                    title={commitment}
+                                                    onChange={(
+                                                        e: ChangeEvent<HTMLTextAreaElement>
+                                                    ) => {
+                                                        e.persist();
+                                                        setValues((prev) => ({
+                                                            ...prev,
+                                                            [`${commentId}-s3PFBx7asUX-${voteId}`]:
+                                                                e.target.value,
+                                                        }));
+                                                    }}
+                                                    onBlur={(
+                                                        e: FocusEvent<HTMLTextAreaElement>
+                                                    ) => {
+                                                        e.persist();
+                                                        if (selectedPeriod) {
+                                                            postData({
+                                                                de: commentId,
+                                                                co: "s3PFBx7asUX",
+                                                                ou: voteId,
+                                                                ds: "fFaTViPsQBs",
+                                                                value: e.target
+                                                                    .value,
+                                                                pe: selectedPeriod,
+                                                            });
                                                         }
-                                                        w="100%"
-                                                        isDisabled={!isAdmin}
-                                                        id="cYAkzzXVMAN-s3PFBx7asUX-val"
-                                                        name="entryfield"
-                                                        title={commitment}
-                                                        onChange={(
-                                                            e: ChangeEvent<HTMLTextAreaElement>
-                                                        ) => {
-                                                            e.persist();
-                                                            setValues((prev) => ({
-                                                                ...prev,
-                                                                [`${commentId}-s3PFBx7asUX-${voteId}`]:
-                                                                    e.target.value,
-                                                            }));
-                                                        }}
-                                                        onBlur={(
-                                                            e: FocusEvent<HTMLTextAreaElement>
-                                                        ) => {
-                                                            e.persist();
-                                                            if (selectedPeriod) {
-                                                                postData({
-                                                                    de: commentId,
-                                                                    co: "s3PFBx7asUX",
-                                                                    ou: voteId,
-                                                                    ds: "fFaTViPsQBs",
-                                                                    value: e.target
-                                                                        .value,
-                                                                    pe: selectedPeriod,
-                                                                });
-                                                            }
-                                                        }}
-                                                    />
-                                                </Td>
-                                            </Tr>
-                                        )
+                                                    }}
+                                                />
+                                            </Td>
+                                        </Tr>
+                                    )
                                 );
                             })}
                         </Tbody>
                     </Table>
-                    <Button
-                        colorScheme="green"
-                        size="sm"
-                        position="fixed"
-                        bottom="20px"
-                        right="20px"
-                    >
-                        Submit and Lock
-                </Button>
+                    {isAdmin && (
+                        <Button
+                            colorScheme="green"
+                            size="sm"
+                            position="fixed"
+                            bottom="20px"
+                            right="20px"
+                            onClick={() => completeDataSet()}
+                        >
+                            {data?.completeDate
+                                ? "Open data entry"
+                                : "Submit and Lock"}
+                        </Button>
+                    )}
                 </Box>
             )}
         </Stack>
