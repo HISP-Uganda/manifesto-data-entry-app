@@ -1,6 +1,7 @@
 import { useDataEngine } from "@dhis2/app-runtime";
 import { useQuery } from "@tanstack/react-query";
 import { Commitment, DataSetData } from "./interfaces";
+import { completionsApi } from "./Store";
 
 export const useInitial = () => {
     const engine = useDataEngine();
@@ -15,9 +16,13 @@ export const useInitial = () => {
         const {
             commitments,
             units: { organisationUnits },
+            completions,
         }: any = await engine.query({
             commitments: {
                 resource: "dataStore/manifesto/commitments.json",
+            },
+            completions: {
+                resource: "dataStore/manifesto/completions.json",
             },
             units: {
                 resource: "me.json",
@@ -28,6 +33,7 @@ export const useInitial = () => {
         });
         const isAdmin = organisationUnits[0].level === 2;
         const ous = organisationUnits.map((o: any) => o.id);
+        completionsApi.update(completions);
         return {
             commitments: isAdmin
                 ? commitments

@@ -17,13 +17,6 @@ const customTheme = extendTheme({
                 fontWeight: "bold",
                 padding: "8px",
             },
-            // tr: {
-            //     borderBottom: "2px solid",
-            //     borderColor: "green.400",
-            // },
-            // td: {
-            //     borderS: "3px solid gray",
-            // },
             Table: {
                 Td: {
                     borderStyle: "solid",

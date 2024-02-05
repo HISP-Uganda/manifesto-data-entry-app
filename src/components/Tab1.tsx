@@ -13,6 +13,7 @@ import {
     Button,
 } from "@chakra-ui/react";
 import { useDataEngine } from "@dhis2/app-runtime";
+import { useStore } from "effector-react";
 import { generateFixedPeriods } from "@dhis2/multi-calendar-dates";
 import { groupBy, uniq } from "lodash";
 import React, { ChangeEvent, FocusEvent, useEffect, useState } from "react";
@@ -20,6 +21,7 @@ import { GroupBase, Select, ChakraStylesConfig } from "chakra-react-select";
 import { Commitment, Option } from "../interfaces";
 import { useDataSetData } from "../Queries";
 import PeriodSelector from "./PeriodSelector";
+import { $completions, completionsApi } from "../Store";
 
 const scores: Option[] = [
     { label: "1", value: "1", colorScheme: "green", variant: "" },
@@ -40,6 +42,7 @@ export default function Tab1({
     const [selectedPeriod, setSelectedPeriod] = useState<string>();
     const [values, setValues] = useState<Record<string, string>>({});
     const [backgrounds, setBackgrounds] = useState<Record<string, string>>({});
+    const completions = useStore($completions);
     const engine = useDataEngine();
     const [periods, setPeriods] = useState(
         generateFixedPeriods({
@@ -104,32 +107,41 @@ export default function Tab1({
         }));
     };
     const completeDataSet = async () => {
-        for (const voteId of uniq(commitments.map(({ voteId }) => voteId))) {
-            const mutation: any = {
-                type: "create",
-                resource: "completeDataSetRegistrations",
-                data: {
-                    completeDataSetRegistrations: [
-                        {
-                            dataSet: "fFaTViPsQBs",
-                            period: selectedPeriod,
-                            organisationUnit: voteId,
-                            completed: true,
-                        },
-                    ],
-                },
-            };
-            await engine.mutate(mutation);
+        if (selectedPeriod) {
+            const completed = completions[selectedPeriod] || false;
+            for (const voteId of uniq(
+                commitments.map(({ voteId }) => voteId)
+            )) {
+                const mutation: any = {
+                    type: "create",
+                    resource: "completeDataSetRegistrations",
+                    data: {
+                        completeDataSetRegistrations: [
+                            {
+                                dataSet: "fFaTViPsQBs",
+                                period: !completed ? selectedPeriod : "",
+                                organisationUnit: voteId,
+                                completed: !completed,
+                            },
+                        ],
+                    },
+                };
+                await engine.mutate(mutation);
+            }
+            await engine.mutate({
+                type: "update",
+                id: "completions",
+                resource: "dataStore/manifesto",
+                data: { ...completions, [selectedPeriod]: !completed },
+            });
+            completionsApi.update({
+                ...completions,
+                [selectedPeriod]: !completed,
+            });
         }
     };
 
     const chakraStyles: ChakraStylesConfig<Option, false, GroupBase<Option>> = {
-        // dropdownIndicator: (provided, state) => ({
-        //     ...provided,
-        //     background: "green",
-        //     // p: 0,
-        //     // w: "40px",
-        // }),
         container: (provided, state) => {
             let border = "";
 
@@ -147,12 +159,6 @@ export default function Tab1({
                 border,
             };
         },
-        // control: (provided, state) => ({
-        //     ...provided,
-        //     background: "green",
-        //     // p: 0,
-        //     // w: "40px",
-        // }),
     };
 
     return (
@@ -260,7 +266,9 @@ export default function Tab1({
                                                 <Textarea
                                                     isDisabled={
                                                         isAdmin ||
-                                                        data?.completeDate
+                                                        completions[
+                                                            selectedPeriod ?? ""
+                                                        ]
                                                     }
                                                     id="YuQ3dvY57PQ-b35egsIMRiP-val"
                                                     name="entryfield"
@@ -313,7 +321,9 @@ export default function Tab1({
                                                     }
                                                     isDisabled={
                                                         isAdmin ||
-                                                        data?.completeDate
+                                                        completions[
+                                                            selectedPeriod ?? ""
+                                                        ]
                                                     }
                                                     id="RlkUJj1WAs4-pXpEOcDkwjV-val"
                                                     name="entryfield"
@@ -360,7 +370,9 @@ export default function Tab1({
                                                     chakraStyles={chakraStyles}
                                                     isDisabled={
                                                         !isAdmin ||
-                                                        data?.completeDate
+                                                        completions[
+                                                            selectedPeriod ?? ""
+                                                        ]
                                                     }
                                                     options={scores}
                                                     size="sm"
@@ -412,7 +424,9 @@ export default function Tab1({
                                                     w="100%"
                                                     isDisabled={
                                                         !isAdmin ||
-                                                        data?.completeDate
+                                                        completions[
+                                                            selectedPeriod ?? ""
+                                                        ]
                                                     }
                                                     id="cYAkzzXVMAN-s3PFBx7asUX-val"
                                                     name="entryfield"
@@ -460,7 +474,7 @@ export default function Tab1({
                             right="20px"
                             onClick={() => completeDataSet()}
                         >
-                            {data?.completeDate
+                            {completions[selectedPeriod ?? ""]
                                 ? "Open data entry"
                                 : "Submit and Lock"}
                         </Button>
