@@ -24,7 +24,7 @@ export const EntryForm = () => {
     if (isLoading) return <Spinner />;
     if (isSuccess && data)
         return (
-            <Grid templateRows="48px 1fr" gap={4} p="20px">
+            <Grid templateRows="48px 1fr" gap={4} p="10px">
                 <Stack
                     direction="row"
                     justifyContent="space-between"
@@ -38,6 +38,8 @@ export const EntryForm = () => {
                         left="0"
                         top="10"
                         zIndex="sticky"
+                        alignItems="center"
+                        spacing="40px"
                     >
                         <Box width="250px" height="60px">
                             <Image
@@ -54,15 +56,16 @@ export const EntryForm = () => {
                     <Stack>
                         <Button
                             colorScheme="blue"
+                            size="sm"
                             as="a"
-                            href="https://dev.ndpme.go.ug/ndpdb/api/apps/Manifesto-Dashboard"
+                            href="https://dev.ndpme.go.ug/ndpdb/api/apps/Manifesto-Dashboard/index.html"
                         >
                             Manifesto Dashboard
                         </Button>
                     </Stack>
                 </Stack>
 
-                <Grid templateColumns="repeat(12, 1fr)">
+                <Grid templateColumns="repeat(12, 1fr)" gap={2}>
                     <GridItem colSpan={2}>
                         <Table
                             cellPadding="0"
@@ -84,21 +87,7 @@ export const EntryForm = () => {
                                                     className="tablinks"
                                                     id="defaultOpen"
                                                     onClick={() =>
-                                                        setSelected(() =>
-                                                            group.filter(
-                                                                (g) => {
-                                                                    if (
-                                                                        data.isAdmin
-                                                                    )
-                                                                        return true;
-                                                                    return (
-                                                                        data.organisationUnits.indexOf(
-                                                                            g.voteId
-                                                                        ) !== -1
-                                                                    );
-                                                                }
-                                                            )
-                                                        )
+                                                        setSelected(() => group)
                                                     }
                                                 >
                                                     {group[0].keyResultsArea}

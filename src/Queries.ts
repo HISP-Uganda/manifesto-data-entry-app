@@ -1,7 +1,7 @@
 import { useDataEngine } from "@dhis2/app-runtime";
 import { useQuery } from "@tanstack/react-query";
 import { Commitment, DataSetData } from "./interfaces";
-import { completionsApi } from "./Store";
+import { completionsApi, commitmentApi } from "./Store";
 
 export const useInitial = () => {
     const engine = useDataEngine();
@@ -33,11 +33,13 @@ export const useInitial = () => {
         });
         const isAdmin = organisationUnits[0].level === 2;
         const ous = organisationUnits.map((o: any) => o.id);
+        const availableCommits = isAdmin
+            ? commitments
+            : commitments.filter((c: any) => ous.indexOf(c.voteId) !== -1);
         completionsApi.update(completions);
+        commitmentApi.set(availableCommits);
         return {
-            commitments: isAdmin
-                ? commitments
-                : commitments.filter((c: any) => ous.indexOf(c.voteId) !== -1),
+            commitments: availableCommits,
             organisationUnits: ous,
             isAdmin,
         };
@@ -64,7 +66,6 @@ export const useDataSetData = ({
                     },
                 });
                 console.log(data);
-
                 return data;
             }
             return {
