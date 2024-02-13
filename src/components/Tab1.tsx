@@ -170,7 +170,7 @@ export default function Tab1({
                         completeDataSetRegistrations: [
                             {
                                 dataSet: "fFaTViPsQBs",
-                                period: !completed ? selectedPeriod : "",
+                                period: selectedPeriod,
                                 organisationUnit: voteId,
                                 completed: !completed,
                             },

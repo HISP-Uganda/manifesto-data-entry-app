@@ -65,7 +65,6 @@ export const useDataSetData = ({
                             .join("&")}&children=true`,
                     },
                 });
-                console.log(data);
                 return data;
             }
             return {
