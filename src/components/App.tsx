@@ -1,8 +1,25 @@
-import { ChakraProvider, CSSReset, extendTheme } from "@chakra-ui/react";
+import {
+    ChakraProvider,
+    CSSReset,
+    extendTheme,
+    Spinner,
+} from "@chakra-ui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+    createHashHistory,
+    Outlet,
+    parseSearchWith,
+    ReactLocation,
+    Route,
+    Router,
+    stringifySearchWith,
+} from "@tanstack/react-location";
+
 import React from "react";
 import "./app.css";
 import { EntryForm } from "./EntryForm";
+import { LocationGenerics } from "../interfaces";
+import { decodeFromBinary, encodeToBinary } from "../utils";
 
 const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -17,13 +34,6 @@ const customTheme = extendTheme({
                 fontWeight: "bold",
                 padding: "8px",
             },
-            // tr: {
-            //     borderBottom: "2px solid",
-            //     borderColor: "green.400",
-            // },
-            // td: {
-            //     borderS: "3px solid gray",
-            // },
             Table: {
                 Td: {
                     borderStyle: "solid",
@@ -60,11 +70,35 @@ const customTheme = extendTheme({
     },
 });
 
+const history = createHashHistory();
+const location = new ReactLocation<LocationGenerics>({
+    history,
+    parseSearch: parseSearchWith((value) =>
+        JSON.parse(decodeFromBinary(value))
+    ),
+    stringifySearch: stringifySearchWith((value) =>
+        encodeToBinary(JSON.stringify(value))
+    ),
+});
+
+const routes: Route<LocationGenerics>[] = [
+    {
+        path: "/",
+        element: <EntryForm />,
+    },
+];
+
 const MyApp = () => (
     <QueryClientProvider client={queryClient}>
         <ChakraProvider theme={customTheme}>
             <CSSReset />
-            <EntryForm />
+            <Router
+                location={location}
+                routes={routes}
+                defaultPendingElement={<Spinner />}
+            >
+                <Outlet />
+            </Router>
         </ChakraProvider>
     </QueryClientProvider>
 );

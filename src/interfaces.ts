@@ -1,4 +1,5 @@
 import { OptionBase } from "chakra-react-select";
+import { MakeGenerics } from "@tanstack/react-location";
 
 export interface DataElementGroupSet {
     code: string;
@@ -78,3 +79,9 @@ interface DataValue {
     comment?: any;
     followup: boolean;
 }
+
+export type LocationGenerics = MakeGenerics<{
+    LoaderData: {};
+    Params: {};
+    Search: {};
+}>;
