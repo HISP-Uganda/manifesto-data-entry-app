@@ -85,3 +85,10 @@ export type LocationGenerics = MakeGenerics<{
     Params: {};
     Search: {};
 }>;
+
+export type CurrentUser = {
+    id: string;
+    name: string;
+    username: string;
+    email: string;
+};

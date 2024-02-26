@@ -1,3 +1,5 @@
+import { CurrentUser } from "./interfaces";
+
 export function encodeToBinary(str: string): string {
     return btoa(
         encodeURIComponent(str).replace(
@@ -24,3 +26,24 @@ export function s2ab(s: any) {
     for (var i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xff;
     return buf;
 }
+
+export const changeApproval = (
+    state: Record<string, Record<string, boolean>>,
+    {
+        mda,
+        period,
+        approved,
+        currentUser,
+    }: {
+        mda: string;
+        period: string;
+        approved: boolean;
+        currentUser: CurrentUser;
+    }
+) => {
+    const previous = state[mda] || {};
+    return {
+        ...state,
+        [mda]: { ...previous, [period]: { approved, ...currentUser } },
+    };
+};

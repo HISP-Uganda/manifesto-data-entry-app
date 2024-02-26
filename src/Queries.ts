@@ -1,7 +1,12 @@
 import { useDataEngine } from "@dhis2/app-runtime";
 import { useQuery } from "@tanstack/react-query";
 import { Commitment, DataSetData } from "./interfaces";
-import { completionsApi, commitmentApi } from "./Store";
+import {
+    completionsApi,
+    commitmentApi,
+    approvalsApi,
+    currentUserApi,
+} from "./Store";
 
 export const useInitial = () => {
     const engine = useDataEngine();
@@ -15,8 +20,9 @@ export const useInitial = () => {
     >(["initial"], async () => {
         const {
             commitments,
-            units: { organisationUnits },
+            units: { organisationUnits, id, name, email, username },
             completions,
+            approvals,
         }: any = await engine.query({
             commitments: {
                 resource: "dataStore/manifesto/commitments.json",
@@ -24,10 +30,13 @@ export const useInitial = () => {
             completions: {
                 resource: "dataStore/manifesto/completions.json",
             },
+            approvals: {
+                resource: "dataStore/manifesto/approvals.json",
+            },
             units: {
                 resource: "me.json",
                 params: {
-                    fields: "organisationUnits[id,code,name,level],name",
+                    fields: "organisationUnits[id,code,name,level],id,name,email,username",
                 },
             },
         });
@@ -38,6 +47,8 @@ export const useInitial = () => {
             : commitments.filter((c: any) => ous.indexOf(c.voteId) !== -1);
         completionsApi.update(completions);
         commitmentApi.set(availableCommits);
+        approvalsApi.change(approvals);
+        currentUserApi.set({ id, username, email, name });
         return {
             commitments: availableCommits,
             organisationUnits: ous,
@@ -65,6 +76,7 @@ export const useDataSetData = ({
                             .join("&")}&children=true`,
                     },
                 });
+
                 return data;
             }
             return {
