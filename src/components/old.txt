@@ -14,7 +14,6 @@ import {
   DrawerHeader,
   DrawerOverlay,
   Input,
-  Image,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -59,10 +58,9 @@ import { changeApproval, s2ab } from "../utils";
 import PeriodSelector from "./PeriodSelector";
 
 const scores: Option[] = [
-  { label: "1 - Achieved", value: "1", colorScheme: "yellow", variant: "" },
-  { label: "2 - Ongoing", value: "2", colorScheme: "green" },
-  { label: "3 - Not yet Implemented", value: "3", colorScheme: "red" },
-  { label: "4 - Delayed", value: "4", colorScheme: "blue" },
+  { label: "1 - Achieved", value: "1", colorScheme: "green", variant: "" },
+  { label: "2 - Commenced", value: "2", colorScheme: "yellow" },
+  { label: "3 - Not Implemented", value: "3", colorScheme: "red" },
 ];
 
 export default function Tab1({
@@ -96,15 +94,19 @@ export default function Tab1({
   const completions = useStore($completions);
   const allCommitments = useStore($commitments);
   const approvals = useStore($approvals);
-  const isReportApproved =
-    approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.["approved"];
   const [currentTextField, setCurrentTextField] = useState<{
     voteId: string;
     dataElement: string;
     isDisabled: boolean;
     co: string;
     info: any;
-  }>({ voteId: "", dataElement: "", isDisabled: false, co: "", info: {} });
+  }>({
+    voteId: "",
+    dataElement: "",
+    isDisabled: false,
+    co: "",
+    info: {},
+  });
   const engine = useDataEngine();
   const [periods, setPeriods] = useState(
     generateFixedPeriods({
@@ -116,18 +118,12 @@ export default function Tab1({
     })
   );
   useEffect(() => {
-    const currentYear = new Date().getFullYear();
-    const previousFiscalYearStart = currentYear - 1;
-    const previousFiscalYearEnd = currentYear;
-    const defaultPeriod = `${previousFiscalYearStart}July`;
+    const defaultPeriod = `${year}July`;
     setSelectedPeriod(defaultPeriod);
   }, []);
-
   const onYearChange = (diff: number) => {
     setYear((year) => year + diff);
-    const selectedYear = year + diff;
-    const selectedPeriod = `${selectedYear}July`;
-    setSelectedPeriod(selectedPeriod);
+    setSelectedPeriod(undefined);
   };
 
   const { isLoading, isError, isSuccess, error, data } = useDataSetData({
@@ -394,9 +390,8 @@ export default function Tab1({
     isDisabled: boolean,
     info: any
   ) => {
-    console.log(info);
     setCurrentTextField(() => ({
-      isDisabled,
+      isDisabled: false,
       voteId,
       dataElement,
       co,
@@ -425,7 +420,7 @@ export default function Tab1({
           <Box
             w="50px"
             h="30px"
-            bg="#FEE200"
+            bg="green.500"
             display="flex"
             justifyContent="center"
             alignItems="center"
@@ -434,13 +429,13 @@ export default function Tab1({
               1
             </Text>
           </Box>
-          <Text fontWeight="bold" fontSize="lg" color="#FEE200">
+          <Text fontWeight="bold" fontSize="lg" color="green.500">
             Achieved
           </Text>
           <Box
             w="50px"
             h="30px"
-            bg="green.500"
+            bg="yellow.500"
             display="flex"
             justifyContent="center"
             alignItems="center"
@@ -449,8 +444,8 @@ export default function Tab1({
               2
             </Text>
           </Box>
-          <Text fontWeight="bold" fontSize="lg" color="green.500">
-            Ongoing
+          <Text fontWeight="bold" fontSize="lg" color="yellow.500">
+            Commenced
           </Text>
           <Box
             w="50px"
@@ -465,16 +460,8 @@ export default function Tab1({
             </Text>
           </Box>
           <Text fontWeight="bold" fontSize="lg" color="red.500">
-            Not Yet implemented
+            Not implemented
           </Text>
-        </Stack>
-        <Spacer />
-        <Stack>
-          {/* {!isAdmin && completions[selectedPeriod ?? ""] && (
-            <Text color="green.500" fontSize="lg" fontWeight="bold" mb="4">
-              This report has been approved.
-            </Text>
-          )} */}
         </Stack>
         <Spacer />
         <Stack>
@@ -537,7 +524,7 @@ export default function Tab1({
                   Manifesto Commitment
                 </Td>
                 <Td w="50px">Lead MDA</Td>
-                <Td>Performance (Annual and Cumulative )</Td>
+                <Td>Performance (Annual and Cumulative)</Td>
                 <Td w="100px" minW="100px" maxW="100px">
                   <p>
                     Budget <br /> (Ugx Bn)
@@ -605,7 +592,7 @@ export default function Tab1({
                               {String(
                                 values[
                                   `${performanceId}-b35egsIMRiP-${voteId}`
-                                ] || "View Performance"
+                                ] || "Add Performance"
                               ).slice(0, 25)}
                             </Button>
                           ) : (
@@ -616,8 +603,11 @@ export default function Tab1({
                                   voteId,
                                   performanceId,
                                   "b35egsIMRiP",
-                                  isAdmin || completions[selectedPeriod ?? ""],
-
+                                  isAdmin ||
+                                    completions[selectedPeriod ?? ""] ||
+                                    approvals[voteId]?.[selectedPeriod ?? ""]?.[
+                                      "approved"
+                                    ],
                                   {
                                     ...(info[
                                       `${performanceId}-b35egsIMRiP-${voteId}`
@@ -645,7 +635,11 @@ export default function Tab1({
                               backgrounds[`${budgetId}-pXpEOcDkwjV-${voteId}`]
                             }
                             isDisabled={
-                              isAdmin || completions[selectedPeriod ?? ""]
+                              isAdmin ||
+                              completions[selectedPeriod ?? ""] ||
+                              approvals[voteId]?.[selectedPeriod ?? ""]?.[
+                                "approved"
+                              ]
                             }
                             defaultValue={
                               values[`${budgetId}-pXpEOcDkwjV-${voteId}`] ?? ""
@@ -675,12 +669,16 @@ export default function Tab1({
                         <Td>
                           <Select<Option, false, GroupBase<Option>>
                             chakraStyles={chakraStyles}
+                            isDisabled={
+                              !isAdmin ||
+                              completions[selectedPeriod ?? ""] ||
+                              !approvals[voteId]?.[selectedPeriod ?? ""]?.[
+                                "approved"
+                              ]
+                            }
                             options={scores}
                             size="sm"
-                            colorScheme="gray"
-                            isDisabled={
-                              !isAdmin || completions[selectedPeriod ?? ""]
-                            }
+                            colorScheme="blue"
                             value={scores.find(
                               ({ value }) =>
                                 value ===
@@ -748,11 +746,11 @@ export default function Tab1({
                                   voteId,
                                   commentId,
                                   "s3PFBx7asUX",
-                                  !isAdmin || completions[selectedPeriod ?? ""],
-                                  // ||
-                                  //   approvals[voteId]?.[selectedPeriod ?? ""]?.[
-                                  //     "approved"
-                                  //   ],
+                                  !isAdmin ||
+                                    completions[selectedPeriod ?? ""] ||
+                                    approvals[voteId]?.[selectedPeriod ?? ""]?.[
+                                      "approved"
+                                    ],
                                   {
                                     ...(info[
                                       `${performanceId}-b35egsIMRiP-${voteId}`
@@ -798,52 +796,57 @@ export default function Tab1({
                 : "Submit and Lock"}
             </Button>
           )}
-          {!isAdmin && !completions[selectedPeriod ?? ""] && (
+          {/* {!isAdmin && (
+            <Button
+              size="sm"
+              position="fixed"
+              bottom="20px"
+              right="20px"
+              onClick={() => onOpenApproval()}
+              isDisabled={
+                !completions[selectedPeriod ?? ""] &&
+                approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
+                  "approved"
+                ]
+              }
+            >
+              Approved
+            </Button>
+          )} */}
+
+          {!isAdmin && (
             <Button
               size="sm"
               position="fixed"
               backgroundColor={
+                !completions[selectedPeriod ?? ""] &&
                 approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
                   "approved"
                 ]
                   ? "green.500"
                   : "#009696"
               }
-              isDisabled={isReportApproved}
               color="#FFF"
               bottom="20px"
               right="20px"
               onClick={() => onOpenApproval()}
+              isDisabled={
+                !completions[selectedPeriod ?? ""] &&
+                approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
+                  "approved"
+                ]
+              }
               _hover={{
                 color: "#000000",
               }}
             >
-              {approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
+              {!completions[selectedPeriod ?? ""] &&
+              approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
                 "approved"
               ]
                 ? "Report Approved"
                 : "Submit and Approve Report"}
             </Button>
-          )}
-
-          {!isAdmin && completions[selectedPeriod ?? ""] && (
-            <Stack direction="row">
-              <Stack mt="4px">
-                <Box width="50px" height="60px">
-                  <Image
-                    src="https://cdn-icons-png.flaticon.com/128/11348/11348043.png"
-                    alt="Information Icon"
-                  />
-                </Box>
-              </Stack>
-              <Stack direction="column">
-                <Text color="#FF7720" fontSize="lg" fontWeight="bold">
-                  This report has been locked for data entry. {<br />}Please
-                  contact the MIU team at the office of the president for any
-                  clarification!
-                </Text>
-              </Stack>
-            </Stack>
           )}
 
           <Modal isOpen={isOpening} onClose={handleClosed}>
@@ -922,11 +925,21 @@ export default function Tab1({
                 ? "Annual Performance"
                 : "Comments (Score)"}
             </DrawerHeader>
+            <DrawerCloseButton mt="20px" mr="10">
+              <Button
+                onClick={onClose}
+                color="#ffff"
+                backgroundColor="#009696"
+                _hover={{ bg: "yellow.500", color: "#ffff" }}
+              >
+                OK
+              </Button>
+            </DrawerCloseButton>
           </DrawerHeader>
-
           <DrawerBody overflow="auto">
-            <Stack>
-              {currentTextField.info["approved"] && (
+            <Stack ml="20px">
+              {/* <pre>{JSON.stringify(currentTextField.info, null, 2)}</pre> */}
+              {currentTextField.info["approved"] && isAdmin && (
                 <Stack>
                   <Text fontWeight="bold" color="#009696">
                     Approver Information
@@ -943,10 +956,10 @@ export default function Tab1({
                     <Text fontWeight="bold">Approver By:</Text>
                     <Text>{currentTextField.info["name"]}</Text>
                   </Stack>
-                  <Stack direction="row" spacing="20px">
+                  {/* <Stack direction="row" spacing="20px">
                     <Text fontWeight="bold">Date When Approved :</Text>
                     <Text>{currentTextField.info[""]}</Text>
-                  </Stack>
+                  </Stack> */}
                   <Stack direction="row" spacing="20px">
                     <Text fontWeight="bold">Status</Text>
                     <Text color="green.500" fontWeight="bold">
@@ -958,7 +971,7 @@ export default function Tab1({
               <Textarea
                 border="3px solid yellow"
                 placeholder="Please Enter text here..."
-                h="65vh"
+                h="69vh"
                 bg={
                   backgrounds[
                     `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
@@ -966,9 +979,9 @@ export default function Tab1({
                 }
                 w="100%"
                 rows={20}
+                isDisabled={currentTextField.isDisabled}
                 id={`${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}-val`}
                 name="entryfield"
-                isDisabled={currentTextField.isDisabled}
                 defaultValue={
                   values[
                     `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
@@ -995,16 +1008,12 @@ export default function Tab1({
               />
             </Stack>
           </DrawerBody>
-          <DrawerFooter>
-            <Button
-              onClick={onClose}
-              color="#ffff"
-              backgroundColor="#009696"
-              _hover={{ bg: "yellow.500", color: "#ffff" }}
-            >
-              OK
-            </Button>
-          </DrawerFooter>
+          <DrawerFooter
+            display="flex"
+            justifyContent="flex-start"
+            alignItems="center"
+            mt={4}
+          ></DrawerFooter>
         </DrawerContent>
       </Drawer>
     </Stack>

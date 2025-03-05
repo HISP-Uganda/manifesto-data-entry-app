@@ -11,6 +11,17 @@ body {
     height: 100%;
     font-weight: bold;
 }
+.tablinks {
+    background-color: red;
+    color: black;
+    padding: 8px 16px;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    display: block;
+    text-align: left;
+    transition: background-color 0.3s;
+  }
 
 /* Style the buttons inside the tab */
 .tab button {
@@ -28,21 +39,8 @@ body {
     font-weight: bold;
 }
 
-.tablinks {
-    background-color: #f2f2f2;
-    color: black;
-    padding: 8px 16px;
-    border: none;
-    cursor: pointer;
-    width: 100%;
-    display: block;
-    text-align: left;
-    transition: background-color 0.3s;
-  }
+
   
-  .tablinks.active {
-    background-color: white;
-  }
 
 /* Change background color of buttons on hover */
 .tab button:hover {
@@ -52,9 +50,7 @@ body {
 
 /* Create an active/current "tab button" class */
 .tab button.active {
-    background-color: #008080;
-    color: #ffffff;
-    font-weight: 400;
+    background-color: #D69E2E 
 }
 
 /* Style the tab content */
