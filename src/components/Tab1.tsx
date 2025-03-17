@@ -7,14 +7,9 @@ import {
   AlertDialogOverlay,
   Box,
   Button,
-  Drawer,
-  DrawerBody,
-  DrawerContent,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerOverlay,
   Input,
   Image,
+  Icon,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -34,7 +29,11 @@ import {
   Tr,
   useDisclosure,
   useToast,
-  DrawerCloseButton,
+  MenuButton,
+  Menu,
+  Portal,
+  MenuList,
+  MenuItem,
 } from "@chakra-ui/react";
 import { useDataEngine } from "@dhis2/app-runtime";
 import { generateFixedPeriods } from "@dhis2/multi-calendar-dates";
@@ -47,6 +46,7 @@ import "react-quill/dist/quill.snow.css";
 import { utils, write } from "xlsx";
 import { Commitment, Option, CurrentUser } from "../interfaces";
 import { useDataSetData } from "../Queries";
+import { FaFilePdf, FaFileCsv, FaFileExcel, FaFileWord } from "react-icons/fa";
 import {
   $approvals,
   $commitments,
@@ -57,6 +57,7 @@ import {
 } from "../Store";
 import { changeApproval, s2ab } from "../utils";
 import PeriodSelector from "./PeriodSelector";
+import { jsPDF } from "jspdf";
 
 const scores: Option[] = [
   { label: "1 - Achieved", value: "1", colorScheme: "yellow", variant: "" },
@@ -130,10 +131,221 @@ export default function Tab1({
     setSelectedPeriod(selectedPeriod);
   };
 
+  const customChakraStyles: ChakraStylesConfig<
+    Option,
+    false,
+    GroupBase<Option>
+  > = {
+    control: (provided, state) => {
+      let bgColor = "white";
+      if (state.hasValue && state.getValue()[0]) {
+        const selectedValue = state.getValue()[0].value;
+        if (selectedValue === "1") bgColor = "#FEE200";
+        else if (selectedValue === "2") bgColor = "green.400";
+        else if (selectedValue === "3") bgColor = "red.500";
+        else if (selectedValue === "4") bgColor = "blue.500";
+      }
+      return {
+        ...provided,
+        backgroundColor: bgColor,
+        borderColor: state.isFocused ? "gray.400" : "gray.200",
+        boxShadow: state.isFocused ? "0 0 0 1px gray" : "none",
+      };
+    },
+    option: (provided, state) => {
+      let bg;
+      if (state.isSelected) {
+        if (state.data.value === "1") bg = "#FEE200";
+        else if (state.data.value === "2") bg = "green.500";
+        else if (state.data.value === "3") bg = "red.500";
+        else if (state.data.value === "4") bg = "blue.500";
+      } else if (state.isFocused) {
+        if (state.data.value === "1") bg = "yellow.100";
+        else if (state.data.value === "2") bg = "green.100";
+        else if (state.data.value === "3") bg = "red.100";
+        else if (state.data.value === "4") bg = "blue.100";
+      } else {
+        bg = "white";
+      }
+      return {
+        ...provided,
+        backgroundColor: bg,
+        color: state.isSelected ? "white" : "black",
+      };
+    },
+    singleValue: (provided, state) => ({
+      ...provided,
+      color: "white",
+    }),
+  };
+
   const { isLoading, isError, isSuccess, error, data } = useDataSetData({
     selectedPeriod,
     orgUnits,
   });
+
+  //New download button
+
+  const handleDownloadXlsx = () => {
+    setIsOpened(() => false);
+    let wb = utils.book_new();
+    wb.Props = {
+      Title: "SheetJS Tutorial",
+      Subject: "Test",
+      Author: "Red Stapler",
+      CreatedDate: new Date(),
+    };
+
+    wb.SheetNames.push("Listing");
+    let ws = utils.json_to_sheet(
+      allCommitments.map(
+        ({
+          subKeyResultsArea,
+          commitment,
+          MDAs,
+          scoreCode,
+          voteId,
+          performanceId,
+          budgetId,
+          scoreId,
+          commentId,
+        }) => ({
+          subKeyResultsArea,
+          scoreCode: String(scoreCode).replace("SC-", ""),
+          commitment,
+          MDAs,
+          performance: values[`${performanceId}-b35egsIMRiP-${voteId}`],
+          budget: values[`${budgetId}-pXpEOcDkwjV-${voteId}`],
+          score: values[`${scoreId}-G5EzBzyQXD9-${voteId}`],
+          comments: values[`${commentId}-s3PFBx7asUX-${voteId}`],
+        })
+      )
+    );
+    wb.Sheets["Listing"] = ws;
+
+    const wbout = write(wb, { bookType: "xlsx", type: "binary" });
+    saveAs(
+      new Blob([s2ab(wbout)], { type: "application/octet-stream" }),
+      "export.xlsx"
+    );
+  };
+
+  const handleDownloadCsv = () => {
+    setIsOpened(() => false);
+    const headers = [
+      "subKeyResultsArea",
+      "scoreCode",
+      "commitment",
+      "MDAs",
+      "performance",
+      "budget",
+      "score",
+      "comments",
+    ];
+    const rows = allCommitments.map(
+      ({
+        subKeyResultsArea,
+        commitment,
+        MDAs,
+        scoreCode,
+        voteId,
+        performanceId,
+        budgetId,
+        scoreId,
+        commentId,
+      }) =>
+        [
+          subKeyResultsArea,
+          String(scoreCode).replace("SC-", ""),
+          commitment,
+          MDAs,
+          values[`${performanceId}-b35egsIMRiP-${voteId}`],
+          values[`${budgetId}-pXpEOcDkwjV-${voteId}`],
+          values[`${scoreId}-G5EzBzyQXD9-${voteId}`],
+          values[`${commentId}-s3PFBx7asUX-${voteId}`],
+        ].join(",")
+    );
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, "export.csv");
+  };
+
+  const handleDownloadPdf = () => {
+    setIsOpened(() => false);
+    const doc = new jsPDF();
+    let y = 10;
+    allCommitments.forEach((item) => {
+      // For simplicity, we'll output three fields per row.
+      const line = `${item.subKeyResultsArea}, ${String(item.scoreCode).replace(
+        "SC-",
+        ""
+      )}, ${item.commitment}`;
+      doc.text(line, 10, y);
+      y += 10;
+      if (y > 280) {
+        doc.addPage();
+        y = 10;
+      }
+    });
+    doc.save("export.pdf");
+  };
+
+  const handleDownloadWord = () => {
+    setIsOpened(() => false);
+    // Create a basic HTML template for a Word document
+    const content = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office'
+          xmlns:w='urn:schemas-microsoft-com:office:word'
+          xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset="utf-8">
+        <title>Export</title>
+      </head>
+      <body>
+        <table border="1" cellspacing="0" cellpadding="5">
+          <tr>
+            <th>subKeyResultsArea</th>
+            <th>scoreCode</th>
+            <th>commitment</th>
+            <th>MDAs</th>
+            <th>performance</th>
+            <th>budget</th>
+            <th>score</th>
+            <th>comments</th>
+          </tr>
+          ${allCommitments
+            .map(
+              ({
+                subKeyResultsArea,
+                commitment,
+                MDAs,
+                scoreCode,
+                voteId,
+                performanceId,
+                budgetId,
+                scoreId,
+                commentId,
+              }) => `
+            <tr>
+              <td>${subKeyResultsArea}</td>
+              <td>${String(scoreCode).replace("SC-", "")}</td>
+              <td>${commitment}</td>
+              <td>${MDAs}</td>
+              <td>${values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""}</td>
+              <td>${values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""}</td>
+              <td>${values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || ""}</td>
+              <td>${values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""}</td>
+            </tr>
+          `
+            )
+            .join("")}
+        </table>
+      </body>
+    </html>
+  `;
+    const blob = new Blob(["\ufeff", content], { type: "application/msword" });
+    saveAs(blob, "export.doc");
+  };
 
   //Handling the Download Report Button
 
@@ -467,6 +679,21 @@ export default function Tab1({
           <Text fontWeight="bold" fontSize="lg" color="red.500">
             Not Yet implemented
           </Text>
+          <Box
+            w="50px"
+            h="30px"
+            bg="blue.500"
+            display="flex"
+            justifyContent="center"
+            alignItems="center"
+          >
+            <Text color="white" fontSize="lg" fontWeight="extrabold">
+              4
+            </Text>
+          </Box>
+          <Text fontWeight="bold" fontSize="lg" color="blue.500">
+            Delayed
+          </Text>
         </Stack>
         <Spacer />
         <Stack>
@@ -477,35 +704,74 @@ export default function Tab1({
           )} */}
         </Stack>
         <Spacer />
-        <Stack>
-          <Button
+        <Menu>
+          <MenuButton
+            as={Button}
             color="#ffff"
             backgroundColor="#009696"
             _hover={{ bg: "yellow.500", color: "#ffff" }}
             size="sm"
-            onClick={handleButtonClick}
+            marginTop="7px"
           >
             Download Report
-          </Button>
-          <Modal isOpen={isOpened} onClose={handleClose}>
-            <ModalOverlay />
-            <ModalContent>
-              <ModalHeader>Download Report Confirmation</ModalHeader>
-              <ModalCloseButton />
-              <ModalBody>
-                Are you sure you want to download this Report?
-              </ModalBody>
-              <ModalFooter>
-                <Button colorScheme="blue" mr={3} onClick={handleConfirm}>
-                  Download
-                </Button>
-                <Button variant="ghost" onClick={handleClose}>
-                  Cancel
-                </Button>
-              </ModalFooter>
-            </ModalContent>
-          </Modal>
-        </Stack>
+          </MenuButton>
+          <Portal>
+            <MenuList zIndex={9999}>
+              <MenuItem size="xs" onClick={handleDownloadPdf}>
+                <span
+                  style={{
+                    color: "red",
+                    marginRight: "8px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
+                >
+                  <FaFilePdf />
+                </span>
+                PDF
+              </MenuItem>
+              <MenuItem size="xs" onClick={handleDownloadCsv}>
+                <span
+                  style={{
+                    color: "orange",
+                    marginRight: "8px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
+                >
+                  <FaFileCsv />
+                </span>
+                CSV
+              </MenuItem>
+              <MenuItem size="xs" onClick={handleDownloadXlsx}>
+                <span
+                  style={{
+                    color: "green",
+                    marginRight: "8px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
+                >
+                  <FaFileExcel />
+                </span>
+                XLSX
+              </MenuItem>
+              <MenuItem size="xs" onClick={handleDownloadWord}>
+                <span
+                  style={{
+                    color: "blue",
+                    marginRight: "8px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
+                >
+                  <FaFileWord />
+                </span>
+                WORD
+              </MenuItem>
+            </MenuList>
+          </Portal>
+        </Menu>
       </Stack>
       {isError && <pre>{JSON.stringify(error, null, 2)}</pre>}
       {isLoading && (
@@ -540,7 +806,7 @@ export default function Tab1({
                 <Td>Performance (Annual and Cumulative )</Td>
                 <Td w="100px" minW="100px" maxW="100px">
                   <p>
-                    Budget <br /> (Ugx Bn)
+                    Budgetary expenditure <br /> (Ugx Bn)
                   </p>
                 </Td>
                 <Td w="170px">Annual Performance Score</Td>
@@ -674,7 +940,7 @@ export default function Tab1({
                         </Td>
                         <Td>
                           <Select<Option, false, GroupBase<Option>>
-                            chakraStyles={chakraStyles}
+                            chakraStyles={customChakraStyles}
                             options={scores}
                             size="sm"
                             colorScheme="gray"
@@ -687,18 +953,18 @@ export default function Tab1({
                                 values[`${scoreId}-G5EzBzyQXD9-${voteId}`]
                             )}
                             onChange={(value) => {
+                              const newVal = value ? value.value : "";
                               setValues((prev) => ({
                                 ...prev,
-                                [`${scoreId}-G5EzBzyQXD9-${voteId}`]:
-                                  value?.value ?? "",
+                                [`${scoreId}-G5EzBzyQXD9-${voteId}`]: newVal,
                               }));
-                              if (selectedPeriod && value) {
+                              if (selectedPeriod) {
                                 postData({
                                   de: scoreId,
                                   co: "G5EzBzyQXD9",
                                   ou: voteId,
                                   ds: "fFaTViPsQBs",
-                                  value: value.value,
+                                  value: newVal,
                                   pe: selectedPeriod,
                                 });
                               }
@@ -786,7 +1052,7 @@ export default function Tab1({
               size="sm"
               position="fixed"
               bottom="20px"
-              right="20px"
+              left="250px"
               onClick={() =>
                 handleSubmitAndLockClick(
                   completions[selectedPeriod ?? ""] ? "recall" : "submit"
@@ -913,18 +1179,15 @@ export default function Tab1({
           </AlertDialogContent>
         </AlertDialogOverlay>
       </AlertDialog>
-      <Drawer isOpen={isOpen} placement="right" onClose={onClose} size="lg">
-        <DrawerOverlay />
-        <DrawerContent>
-          <DrawerHeader>
-            <DrawerHeader>
-              {actionType === "performance"
-                ? "Annual Performance"
-                : "Comments (Score)"}
-            </DrawerHeader>
-          </DrawerHeader>
-
-          <DrawerBody overflow="auto">
+      <Modal isOpen={isOpen} onClose={onClose} isCentered size="lg">
+        <ModalOverlay />
+        <ModalContent maxWidth="1000px">
+          <ModalHeader>
+            {actionType === "performance"
+              ? "Annual Performance"
+              : "Comments (Score)"}
+          </ModalHeader>
+          <ModalBody overflow="auto">
             <Stack>
               {currentTextField.info["approved"] && (
                 <Stack>
@@ -942,10 +1205,6 @@ export default function Tab1({
                   <Stack direction="row" spacing="20px">
                     <Text fontWeight="bold">Approver By:</Text>
                     <Text>{currentTextField.info["name"]}</Text>
-                  </Stack>
-                  <Stack direction="row" spacing="20px">
-                    <Text fontWeight="bold">Date When Approved :</Text>
-                    <Text>{currentTextField.info[""]}</Text>
                   </Stack>
                   <Stack direction="row" spacing="20px">
                     <Text fontWeight="bold">Status</Text>
@@ -992,10 +1251,11 @@ export default function Tab1({
                     }));
                   }
                 }}
+                whiteSpace="pre-wrap"
               />
             </Stack>
-          </DrawerBody>
-          <DrawerFooter>
+          </ModalBody>
+          <ModalFooter>
             <Button
               onClick={onClose}
               color="#ffff"
@@ -1004,9 +1264,9 @@ export default function Tab1({
             >
               OK
             </Button>
-          </DrawerFooter>
-        </DrawerContent>
-      </Drawer>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Stack>
   );
 }

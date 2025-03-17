@@ -40,7 +40,7 @@ export const EntryForm = () => {
   const handleConfirm = () => {
     setIsOpen(false);
     window.location.replace(
-      "https://dev.ndpme.go.ug/ndpdb/api/apps/Manifesto-Dashboard/index.html"
+      "https://ndpme.go.ug/ndpdb/api/apps/Manifesto-Dashboard/index.html#"
     );
   };
 
@@ -97,7 +97,7 @@ export const EntryForm = () => {
               />
             </Box>
             <Box fontSize="25px" h="30px" mt="20px">
-              <strong>Manifesto Reporting System</strong>
+              <strong>Intergrated Manifesto Reporting System</strong>
             </Box>
           </Stack>
           <Stack>
