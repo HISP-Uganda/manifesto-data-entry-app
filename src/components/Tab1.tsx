@@ -58,12 +58,61 @@ import {
 import { changeApproval, s2ab } from "../utils";
 import PeriodSelector from "./PeriodSelector";
 import { jsPDF } from "jspdf";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
+import Quill from "quill";
+
+const BlockEmbed = Quill.import("blots/block/embed");
+
+class HTMLBlock extends BlockEmbed {
+  static blotName = "html";
+  static tagName = "div";
+  static create(value: string) {
+    let node = super.create();
+    node.innerHTML = value;
+    return node;
+  }
+  static value(node: any) {
+    return node.innerHTML;
+  }
+}
+Quill.register(HTMLBlock);
+
+const modules = {
+  toolbar: {
+    container: [
+      [{ header: [1, 2, false] }],
+      ["bold", "italic", "underline"],
+      [{ list: "ordered" }, { list: "bullet" }],
+      ["clean"],
+      ["table"],
+    ],
+    handlers: {
+      table: function () {
+        const editor = this.quill;
+        const tableHTML = `<table border="1" style="border-collapse: collapse;"><tbody><tr><td style="padding: 4px;">Cell 1</td><td style="padding: 4px;">Cell 2</td></tr><tr><td style="padding: 4px;">Cell 3</td><td style="padding: 4px;">Cell 4</td></tr></tbody></table>`;
+        const range = editor.getSelection(true);
+        editor.insertEmbed(range.index, "html", tableHTML, "user");
+      },
+    },
+  },
+  clipboard: {
+    matchVisual: false,
+    matchers: [
+      [
+        "table",
+        function (node, delta) {
+          return { ops: [{ insert: { html: node.outerHTML } }] };
+        },
+      ],
+    ],
+  },
+};
 
 const scores: Option[] = [
-  { label: "1 - Achieved", value: "1", colorScheme: "yellow", variant: "" },
-  { label: "2 - Ongoing", value: "2", colorScheme: "green" },
+  { label: "1 - Achieved", value: "1", colorScheme: "green" },
+  { label: "2 - Ongoing", value: "2", colorScheme: "yellow" },
   { label: "3 - Not yet Implemented", value: "3", colorScheme: "red" },
-  { label: "4 - Delayed", value: "4", colorScheme: "blue" },
 ];
 
 export default function Tab1({
@@ -140,10 +189,9 @@ export default function Tab1({
       let bgColor = "white";
       if (state.hasValue && state.getValue()[0]) {
         const selectedValue = state.getValue()[0].value;
-        if (selectedValue === "1") bgColor = "#FEE200";
-        else if (selectedValue === "2") bgColor = "green.400";
+        if (selectedValue === "1") bgColor = "green.600";
+        else if (selectedValue === "2") bgColor = "#FEE200";
         else if (selectedValue === "3") bgColor = "red.500";
-        else if (selectedValue === "4") bgColor = "blue.500";
       }
       return {
         ...provided,
@@ -154,16 +202,15 @@ export default function Tab1({
     },
     option: (provided, state) => {
       let bg;
+      let color;
       if (state.isSelected) {
-        if (state.data.value === "1") bg = "#FEE200";
-        else if (state.data.value === "2") bg = "green.500";
+        if (state.data.value === "1") bg = "green.600";
+        else if (state.data.value === "2") bg = "#FEE200";
         else if (state.data.value === "3") bg = "red.500";
-        else if (state.data.value === "4") bg = "blue.500";
       } else if (state.isFocused) {
-        if (state.data.value === "1") bg = "yellow.100";
-        else if (state.data.value === "2") bg = "green.100";
+        if (state.data.value === "1") bg = "green.100";
+        else if (state.data.value === "2") bg = "yellow.100";
         else if (state.data.value === "3") bg = "red.100";
-        else if (state.data.value === "4") bg = "blue.100";
       } else {
         bg = "white";
       }
@@ -426,6 +473,23 @@ export default function Tab1({
     }
   };
 
+  const saveContent = () => {
+    if (selectedPeriod) {
+      const content =
+        values[
+          `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
+        ] || "";
+      postData({
+        de: currentTextField.dataElement,
+        co: currentTextField.co,
+        ou: currentTextField.voteId,
+        ds: "fFaTViPsQBs",
+        value: content,
+        pe: selectedPeriod,
+      });
+    }
+  };
+
   const handleConfirmSubmitAndLock = async () => {
     setIsLoad(true);
     if (actionType === "submit") {
@@ -637,7 +701,7 @@ export default function Tab1({
           <Box
             w="50px"
             h="30px"
-            bg="#FEE200"
+            bg="green.600"
             display="flex"
             justifyContent="center"
             alignItems="center"
@@ -646,13 +710,13 @@ export default function Tab1({
               1
             </Text>
           </Box>
-          <Text fontWeight="bold" fontSize="lg" color="#FEE200">
+          <Text fontWeight="bold" fontSize="lg" color="green.600">
             Achieved
           </Text>
           <Box
             w="50px"
             h="30px"
-            bg="green.500"
+            bg="#FEE200"
             display="flex"
             justifyContent="center"
             alignItems="center"
@@ -661,7 +725,7 @@ export default function Tab1({
               2
             </Text>
           </Box>
-          <Text fontWeight="bold" fontSize="lg" color="green.500">
+          <Text fontWeight="bold" fontSize="lg" color="#FEE200">
             Ongoing
           </Text>
           <Box
@@ -678,21 +742,6 @@ export default function Tab1({
           </Box>
           <Text fontWeight="bold" fontSize="lg" color="red.500">
             Not Yet implemented
-          </Text>
-          <Box
-            w="50px"
-            h="30px"
-            bg="blue.500"
-            display="flex"
-            justifyContent="center"
-            alignItems="center"
-          >
-            <Text color="white" fontSize="lg" fontWeight="extrabold">
-              4
-            </Text>
-          </Box>
-          <Text fontWeight="bold" fontSize="lg" color="blue.500">
-            Delayed
           </Text>
         </Stack>
         <Spacer />
@@ -1214,55 +1263,43 @@ export default function Tab1({
                   </Stack>
                 </Stack>
               )}
-              <Textarea
-                border="3px solid yellow"
-                placeholder="Please Enter text here..."
-                h="65vh"
-                bg={
-                  backgrounds[
-                    `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
-                  ]
-                }
-                w="100%"
-                rows={20}
-                id={`${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}-val`}
-                name="entryfield"
-                isDisabled={currentTextField.isDisabled}
-                defaultValue={
+              <ReactQuill
+                theme="snow"
+                value={
                   values[
                     `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
-                  ]
+                  ] || ""
                 }
-                onBlur={(e: FocusEvent<HTMLTextAreaElement>) => {
-                  e.persist();
-                  if (selectedPeriod) {
-                    postData({
-                      de: currentTextField.dataElement,
-                      co: currentTextField.co,
-                      ou: currentTextField.voteId,
-                      ds: "fFaTViPsQBs",
-                      value: e.target.value,
-                      pe: selectedPeriod,
-                    });
-                    setValues((prev) => ({
-                      ...prev,
-                      [`${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`]:
-                        e.target.value,
-                    }));
-                  }
+                onChange={(content, delta, source, editor) => {
+                  setValues((prev) => ({
+                    ...prev,
+                    [`${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`]:
+                      content,
+                  }));
                 }}
-                whiteSpace="pre-wrap"
+                onBlur={(previousRange, source, editor) => {
+                  saveContent();
+                }}
+                readOnly={currentTextField.isDisabled}
+                style={{
+                  width: "100%",
+                  height: "65vh",
+                }}
+                modules={modules}
               />
             </Stack>
           </ModalBody>
           <ModalFooter>
             <Button
-              onClick={onClose}
+              onClick={() => {
+                saveContent();
+                onClose();
+              }}
               color="#ffff"
               backgroundColor="#009696"
               _hover={{ bg: "yellow.500", color: "#ffff" }}
             >
-              OK
+              SAVE
             </Button>
           </ModalFooter>
         </ModalContent>
