@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "es5",
+        "allowJs": true,
+        "checkJs": false,
+        "strictFunctionTypes": false,
+        "jsx": "react",
+        "outDir": "./build",
+        "rootDir": ".",
+        "removeComments": true,
+        "noEmit": true,
+        "pretty": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "moduleResolution": "node",
+        "esModuleInterop": true
+    },
+    "include": [
+        "lib/**/*",
+        "src/**/*",
+        "d2.config.js",
+        "setupProxy.js"
+    ],
+    "exclude": [
+        "node_modules"
+    ]
+}

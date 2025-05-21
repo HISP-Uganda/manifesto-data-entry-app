@@ -38,7 +38,7 @@ import {
 import { useDataEngine } from "@dhis2/app-runtime";
 import { generateFixedPeriods } from "@dhis2/multi-calendar-dates";
 import { ChakraStylesConfig, GroupBase, Select } from "chakra-react-select";
-import { useStore } from "effector-react";
+import { useUnit } from "effector-react";
 import { saveAs } from "file-saver";
 import { groupBy, uniq } from "lodash";
 import React, { FocusEvent, useEffect, useRef, useState } from "react";
@@ -46,7 +46,10 @@ import "react-quill/dist/quill.snow.css";
 import { utils, write } from "xlsx";
 import { Commitment, Option, CurrentUser } from "../interfaces";
 import { useDataSetData } from "../Queries";
-import { FaFilePdf, FaFileCsv, FaFileExcel, FaFileWord } from "react-icons/fa";
+import { FaFilePdf, FaFileCsv, FaFileWord, FaFileExcel } from "react-icons/fa";
+import type { IconType } from "react-icons";
+
+
 import {
   $approvals,
   $commitments,
@@ -61,6 +64,10 @@ import { jsPDF } from "jspdf";
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
 import Quill from "quill";
+import autoTable from 'jspdf-autotable';
+import { Tooltip } from "@chakra-ui/react";
+// import html2pdf from 'html2pdf.js';
+import ExcelJS from "exceljs";
 
 const BlockEmbed = Quill.import("blots/block/embed");
 
@@ -109,11 +116,11 @@ const modules = {
   },
 };
 
-const scores: Option[] = [
+const scores = [
   { label: "1 - Achieved", value: "1", colorScheme: "green" },
   { label: "2 - Ongoing", value: "2", colorScheme: "yellow" },
   { label: "3 - Not yet Implemented", value: "3", colorScheme: "red" },
-];
+] as Array<Option & { colorScheme: string }>;
 
 export default function Tab1({
   commitments,
@@ -142,10 +149,10 @@ export default function Tab1({
   const [values, setValues] = useState<Record<string, string>>({});
   const [info, setInfo] = useState<Record<string, any>>({});
   const [backgrounds, setBackgrounds] = useState<Record<string, string>>({});
-  const currentUser = useStore($currentUser);
-  const completions = useStore($completions);
-  const allCommitments = useStore($commitments);
-  const approvals = useStore($approvals);
+  const currentUser = useUnit($currentUser);
+  const completions = useUnit($completions);
+  const allCommitments = useUnit($commitments);
+  const approvals = useUnit($approvals);
   const isReportApproved =
     approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.["approved"];
   const [currentTextField, setCurrentTextField] = useState<{
@@ -178,6 +185,48 @@ export default function Tab1({
     const selectedYear = year + diff;
     const selectedPeriod = `${selectedYear}July`;
     setSelectedPeriod(selectedPeriod);
+  };
+
+  // const getTooltipText = (
+  //   voteId: string,
+  //   dataElement: string,
+  //   co: string
+  // ): string => {
+  //   return (
+  //     stripHtml(values[`${dataElement}-${co}-${voteId}`] || "") ||
+  //     "No data available"
+  //   );
+  // };
+
+  const getTooltipText = (
+    voteId: string,
+    dataElement: string,
+    co: string
+  ): string => {
+    const fullText = stripHtml(values[`${dataElement}-${co}-${voteId}`] || "") || "No data available";
+    const lines = fullText.split(/\r?\n|(?<=\.)\s+/).slice(0, 4);
+    const shortText = lines.join(" \u2022 ");
+    return lines.length < fullText.split(/\r?\n|(?<=\.)\s+/).length ? shortText + "..." : shortText;
+  };
+
+
+  const getScoreLabel = (value: string) => {
+    const found = scores.find((s) => s.value === value);
+    return found?.label.split(" - ")[1] ?? value;
+  };
+
+  const getScoreColorHex = (value: string): string => {
+    if (value === "1") return "FF008000";
+    if (value === "2") return "FFFEE200";
+    if (value === "3") return "FFFF0000";
+    return "FFFFFFFF";
+  };
+
+  const getScoreRGB = (value: string): [number, number, number] => {
+    if (value === "1") return [0, 128, 0];
+    if (value === "2") return [254, 226, 0];
+    if (value === "3") return [255, 0, 0];
+    return [255, 255, 255];
   };
 
   const customChakraStyles: ChakraStylesConfig<
@@ -232,53 +281,71 @@ export default function Tab1({
   });
 
   //New download button
+  const handleDownloadXlsx = async () => {
+    setIsOpened(false);
 
-  const handleDownloadXlsx = () => {
-    setIsOpened(() => false);
-    let wb = utils.book_new();
-    wb.Props = {
-      Title: "SheetJS Tutorial",
-      Subject: "Test",
-      Author: "Red Stapler",
-      CreatedDate: new Date(),
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Report");
+
+    sheet.columns = [
+      { header: "Commitment", key: "commitment", width: 40 },
+      { header: "MDAs", key: "MDAs", width: 25 },
+      { header: "Performance", key: "performance", width: 40 },
+      { header: "Budget", key: "budget", width: 15 },
+      { header: "Score", key: "score", width: 15 },
+      { header: "Comments", key: "comments", width: 40 },
+    ];
+
+    allCommitments.forEach(
+      ({ commitment, MDAs, voteId, performanceId, budgetId, scoreId, commentId }) => {
+        sheet.addRow({
+          commitment: stripHtml(commitment),
+          MDAs: stripHtml(MDAs),
+          performance: stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""),
+          budget: stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""),
+          score: getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || ""),
+          comments: stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""),
+        });
+
+        const row = sheet.lastRow;
+        const scoreValue = values[`${scoreId}-G5EzBzyQXD9-${voteId}`];
+        if (scoreValue && row) {
+          row.getCell("score").fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: getScoreColorHex(scoreValue) },
+          };
+          row.getCell("score").font = { color: { argb: "FFFFFFFF" }, bold: true };
+        }
+      }
+    );
+
+    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    sheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF009696" },
     };
 
-    wb.SheetNames.push("Listing");
-    let ws = utils.json_to_sheet(
-      allCommitments.map(
-        ({
-          subKeyResultsArea,
-          commitment,
-          MDAs,
-          scoreCode,
-          voteId,
-          performanceId,
-          budgetId,
-          scoreId,
-          commentId,
-        }) => ({
-          subKeyResultsArea,
-          scoreCode: String(scoreCode).replace("SC-", ""),
-          commitment,
-          MDAs,
-          performance: values[`${performanceId}-b35egsIMRiP-${voteId}`],
-          budget: values[`${budgetId}-pXpEOcDkwjV-${voteId}`],
-          score: values[`${scoreId}-G5EzBzyQXD9-${voteId}`],
-          comments: values[`${commentId}-s3PFBx7asUX-${voteId}`],
-        })
-      )
-    );
-    wb.Sheets["Listing"] = ws;
+    sheet.eachRow((row) => {
+      row.alignment = { vertical: "middle", wrapText: true };
+    });
 
-    const wbout = write(wb, { bookType: "xlsx", type: "binary" });
-    saveAs(
-      new Blob([s2ab(wbout)], { type: "application/octet-stream" }),
-      "export.xlsx"
-    );
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    saveAs(blob, "report.xlsx");
   };
 
   const handleDownloadCsv = () => {
-    setIsOpened(() => false);
+    setIsOpened(false);
+
+    const escapeCsv = (value: string): string => {
+      const v = value?.toString().replace(/\r?\n|\r/g, " ").trim() ?? "";
+      return `"${v.replace(/"/g, '""')}"`;
+    };
+
     const headers = [
       "subKeyResultsArea",
       "scoreCode",
@@ -289,110 +356,163 @@ export default function Tab1({
       "score",
       "comments",
     ];
+
     const rows = allCommitments.map(
-      ({
-        subKeyResultsArea,
-        commitment,
-        MDAs,
-        scoreCode,
-        voteId,
-        performanceId,
-        budgetId,
-        scoreId,
-        commentId,
-      }) =>
-        [
-          subKeyResultsArea,
-          String(scoreCode).replace("SC-", ""),
-          commitment,
-          MDAs,
-          values[`${performanceId}-b35egsIMRiP-${voteId}`],
-          values[`${budgetId}-pXpEOcDkwjV-${voteId}`],
-          values[`${scoreId}-G5EzBzyQXD9-${voteId}`],
-          values[`${commentId}-s3PFBx7asUX-${voteId}`],
-        ].join(",")
+      ({ subKeyResultsArea, commitment, MDAs, scoreCode, voteId, performanceId, budgetId, scoreId, commentId }) => [
+        escapeCsv(stripHtml(subKeyResultsArea)),
+        escapeCsv(String(scoreCode).replace("SC-", "")),
+        escapeCsv(stripHtml(commitment)),
+        escapeCsv(stripHtml(MDAs)),
+        escapeCsv(stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || "")),
+        escapeCsv(stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || "")),
+        escapeCsv(getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || "")),
+        escapeCsv(stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || "")),
+      ].join(",")
     );
+
     const csvContent = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     saveAs(blob, "export.csv");
   };
 
-  const handleDownloadPdf = () => {
-    setIsOpened(() => false);
-    const doc = new jsPDF();
-    let y = 10;
-    allCommitments.forEach((item) => {
-      // For simplicity, we'll output three fields per row.
-      const line = `${item.subKeyResultsArea}, ${String(item.scoreCode).replace(
-        "SC-",
-        ""
-      )}, ${item.commitment}`;
-      doc.text(line, 10, y);
-      y += 10;
-      if (y > 280) {
-        doc.addPage();
-        y = 10;
-      }
-    });
-    doc.save("export.pdf");
+  const stripHtml = (html: string): string => {
+    const tmp = document.createElement("DIV");
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || "";
   };
 
-  const handleDownloadWord = () => {
-    setIsOpened(() => false);
-    // Create a basic HTML template for a Word document
-    const content = `
-    <html xmlns:o='urn:schemas-microsoft-com:office:office'
-          xmlns:w='urn:schemas-microsoft-com:office:word'
-          xmlns='http://www.w3.org/TR/REC-html40'>
-      <head>
-        <meta charset="utf-8">
-        <title>Export</title>
-      </head>
-      <body>
-        <table border="1" cellspacing="0" cellpadding="5">
-          <tr>
-            <th>subKeyResultsArea</th>
-            <th>scoreCode</th>
-            <th>commitment</th>
-            <th>MDAs</th>
-            <th>performance</th>
-            <th>budget</th>
-            <th>score</th>
-            <th>comments</th>
-          </tr>
-          ${allCommitments
-            .map(
-              ({
-                subKeyResultsArea,
-                commitment,
-                MDAs,
-                scoreCode,
-                voteId,
-                performanceId,
-                budgetId,
-                scoreId,
-                commentId,
-              }) => `
-            <tr>
-              <td>${subKeyResultsArea}</td>
-              <td>${String(scoreCode).replace("SC-", "")}</td>
-              <td>${commitment}</td>
-              <td>${MDAs}</td>
-              <td>${values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""}</td>
-              <td>${values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""}</td>
-              <td>${values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || ""}</td>
-              <td>${values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""}</td>
-            </tr>
-          `
-            )
-            .join("")}
-        </table>
-      </body>
-    </html>
-  `;
-    const blob = new Blob(["\ufeff", content], { type: "application/msword" });
-    saveAs(blob, "export.doc");
+  const handleDownloadPdf = () => {
+    setIsOpened(false);
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a2' });
+
+    const headers = ["Commitment", "MDAs", "Performance", "Budget", "Score", "Comments"];
+
+    const rows = allCommitments.map(({ commitment, MDAs, voteId, performanceId, budgetId, scoreId, commentId }) => [
+      stripHtml(commitment),
+      stripHtml(MDAs),
+      stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""),
+      stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""),
+      getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || ""),
+      stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || "")
+    ]);
+
+    autoTable(doc, {
+      head: [headers],
+      body: rows,
+      startY: 20,
+      styles: {
+        fontSize: 14,
+        cellPadding: 6,
+        overflow: 'linebreak',
+      },
+      headStyles: {
+        fillColor: [0, 150, 150],
+        textColor: 255,
+        fontSize: 12,
+      },
+      columnStyles: {
+        0: { cellWidth: 250 },
+        1: { cellWidth: 100 },
+        2: { cellWidth: 180 },
+        3: { cellWidth: 100 },
+        4: { cellWidth: 100 },
+        5: { cellWidth: 800 },
+      },
+      didParseCell: (data) => {
+        if (data.column.index === 4 && typeof data.cell.raw === 'string') {
+          const label = data.cell.raw.toLowerCase();
+          if (label.includes("achieved")) {
+            data.cell.styles.fillColor = [0, 128, 0];
+            data.cell.styles.textColor = 255;
+          } else if (label.includes("ongoing")) {
+            data.cell.styles.fillColor = [254, 226, 0];
+            data.cell.styles.textColor = 0;
+          } else if (label.includes("not yet implemented")) {
+            data.cell.styles.fillColor = [255, 0, 0];
+            data.cell.styles.textColor = 255;
+          }
+        }
+      },
+    });
+
+    doc.save("report.pdf");
   };
+  const handleDownloadWord = () => {
+    setIsOpened(false);
+
+    const columnWidths = ["20%", "15%", "20%", "10%", "10%", "25%"];
+
+    const container = document.createElement("div");
+
+    container.innerHTML = allCommitments
+      .map(
+        ({
+          commitment,
+          MDAs,
+          voteId,
+          performanceId,
+          budgetId,
+          scoreId,
+          commentId,
+        }) => {
+          const scoreValue = values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || "";
+          const scoreLabel = getScoreLabel(scoreValue);
+          const scoreBg =
+            scoreValue === "1"
+              ? "#008000"
+              : scoreValue === "2"
+                ? "#FEE200"
+                : scoreValue === "3"
+                  ? "#FF0000"
+                  : "white";
+
+          return `
+        <table style="border-collapse: collapse; width: 100%; table-layout: fixed; margin-bottom: 16px; font-size: 14px;" border="1">
+          <thead>
+            <tr style="background-color: #009696; color: white;">
+              <th style="padding: 8px; width: ${columnWidths[0]}">Commitment</th>
+              <th style="padding: 8px; width: ${columnWidths[1]}">MDAs</th>
+              <th style="padding: 8px; width: ${columnWidths[2]}">Performance</th>
+              <th style="padding: 8px; width: ${columnWidths[3]}">Budget</th>
+              <th style="padding: 8px; width: ${columnWidths[4]}">Score</th>
+              <th style="padding: 8px; width: ${columnWidths[5]}">Comments</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding: 8px; word-wrap: break-word;">${commitment}</td>
+              <td style="padding: 8px; word-wrap: break-word;">${MDAs}</td>
+              <td style="padding: 8px; word-wrap: break-word;">${values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""}</td>
+              <td style="padding: 8px; word-wrap: break-word;">${values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""}</td>
+              <td style="padding: 8px; word-wrap: break-word; background-color: ${scoreBg}; color: white;">${scoreLabel}</td>
+              <td style="padding: 8px; word-wrap: break-word;">${values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+        }
+      )
+      .join("");
+
+    const wordDocHTML = `
+  <html xmlns:o='urn:schemas-microsoft-com:office:office'
+        xmlns:w='urn:schemas-microsoft-com:office:word'
+        xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'><title>Report</title></head>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+      ${container.innerHTML}
+    </body>
+  </html>
+`;
+
+    const blob = new Blob(["\ufeff", wordDocHTML], {
+      type: "application/msword",
+    });
+
+    saveAs(blob, "report.doc");
+  };
+
 
   //Handling the Download Report Button
 
@@ -477,7 +597,7 @@ export default function Tab1({
     if (selectedPeriod) {
       const content =
         values[
-          `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
+        `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
         ] || "";
       postData({
         de: currentTextField.dataElement,
@@ -681,6 +801,18 @@ export default function Tab1({
     onOpen();
   };
 
+  const DownloadReportButton = () => (
+    <MenuButton
+      as={Button}
+      color="#ffff"
+      backgroundColor="#009696"
+      _hover={{ bg: "yellow.500", color: "#ffff" }}
+      size="sm"
+      marginTop="7px"
+    >
+      Download Report
+    </MenuButton>
+  );
   return (
     <Stack h="100%">
       <Stack direction="row" h="48px" minH="48px" maxH="48px">
@@ -766,7 +898,7 @@ export default function Tab1({
           </MenuButton>
           <Portal>
             <MenuList zIndex={9999}>
-              <MenuItem size="xs" onClick={handleDownloadPdf}>
+              <MenuItem onClick={handleDownloadPdf} fontSize="sm" py={1} px={2}>
                 <span
                   style={{
                     color: "red",
@@ -779,7 +911,7 @@ export default function Tab1({
                 </span>
                 PDF
               </MenuItem>
-              <MenuItem size="xs" onClick={handleDownloadCsv}>
+              <MenuItem onClick={handleDownloadCsv} fontSize="sm" py={1} px={2}>
                 <span
                   style={{
                     color: "orange",
@@ -792,7 +924,7 @@ export default function Tab1({
                 </span>
                 CSV
               </MenuItem>
-              <MenuItem size="xs" onClick={handleDownloadXlsx}>
+              <MenuItem onClick={handleDownloadXlsx}>
                 <span
                   style={{
                     color: "green",
@@ -801,11 +933,12 @@ export default function Tab1({
                     alignItems: "center",
                   }}
                 >
-                  <FaFileExcel />
+                  <FaFileExcel style={{ fontSize: "1rem" }} />
+
                 </span>
                 XLSX
               </MenuItem>
-              <MenuItem size="xs" onClick={handleDownloadWord}>
+              <MenuItem onClick={handleDownloadWord} fontSize="sm" py={1} px={2}>
                 <span
                   style={{
                     color: "blue",
@@ -864,7 +997,7 @@ export default function Tab1({
             </Thead>
             <Tbody>
               {Object.entries(groupBy(commitments, "subKeyResultsArea")).map(
-                ([sbka, groups]) => {
+                ([sbka, groups]: [string, Commitment[]]) => {
                   return groups.map(
                     (
                       {
@@ -882,214 +1015,211 @@ export default function Tab1({
                       },
                       index
                     ) => (
-                      <Tr>
-                        {index === 0 && (
-                          <Td rowSpan={groups.length}>{subKeyResultsArea}</Td>
-                        )}
-                        <Td>{String(scoreCode).replace("SC-", "")}</Td>
-                        <Td>{commitment}</Td>
-                        <Td>{MDAs}</Td>
-                        <Td>
-                          {isAdmin || completions[selectedPeriod ?? ""] ? (
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                setActionType("performance");
-                                editField(
-                                  voteId,
-                                  performanceId,
-                                  "b35egsIMRiP",
-                                  isAdmin ||
-                                    completions[selectedPeriod ?? ""] ||
-                                    approvals[voteId]?.[selectedPeriod ?? ""]?.[
-                                      "approved"
-                                    ],
-                                  {
-                                    ...(info[
-                                      `${performanceId}-b35egsIMRiP-${voteId}`
-                                    ] ?? {}),
-                                    voteName,
-                                    leadMDA,
-                                    ...(approvals[voteId]?.[
-                                      selectedPeriod ?? ""
-                                    ] ?? {}),
-                                  }
-                                );
-                              }}
-                            >
-                              {String(
-                                values[
-                                  `${performanceId}-b35egsIMRiP-${voteId}`
-                                ] || "View Performance"
-                              ).slice(0, 25)}
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                editField(
-                                  voteId,
-                                  performanceId,
-                                  "b35egsIMRiP",
-                                  isAdmin || completions[selectedPeriod ?? ""],
-
-                                  {
-                                    ...(info[
-                                      `${performanceId}-b35egsIMRiP-${voteId}`
-                                    ] ?? {}),
-                                    voteName,
-                                    leadMDA,
-                                    ...(approvals[voteId]?.[
-                                      selectedPeriod ?? ""
-                                    ] ?? {}),
-                                  }
-                                )
-                              }
-                            >
-                              {String(
-                                values[
-                                  `${performanceId}-b35egsIMRiP-${voteId}`
-                                ] || "Add Performance"
-                              ).slice(0, 25)}
-                            </Button>
+                        <Tr>
+                          {index === 0 && (
+                            <Td rowSpan={groups.length}>{subKeyResultsArea}</Td>
                           )}
-                        </Td>
-                        <Td>
-                          <Input
-                            bg={
-                              backgrounds[`${budgetId}-pXpEOcDkwjV-${voteId}`]
-                            }
-                            isDisabled={
-                              isAdmin || completions[selectedPeriod ?? ""]
-                            }
-                            defaultValue={
-                              values[`${budgetId}-pXpEOcDkwjV-${voteId}`] ?? ""
-                            }
-                            id="RlkUJj1WAs4-pXpEOcDkwjV-val"
-                            name="entryfield"
-                            onBlur={async (e: FocusEvent<HTMLInputElement>) => {
-                              e.persist();
-                              if (selectedPeriod) {
-                                await postData({
-                                  de: budgetId,
-                                  co: "pXpEOcDkwjV",
-                                  ou: voteId,
-                                  ds: "fFaTViPsQBs",
-                                  value: e.target.value,
-                                  pe: selectedPeriod,
-                                });
+                          <Td>{String(scoreCode).replace("SC-", "")}</Td>
+                          <Td>{commitment}</Td>
+                          <Td>{MDAs}</Td>
+                          <Td>
+                            {isAdmin || completions[selectedPeriod ?? ""] ? (
+                              <Tooltip
+                                label={getTooltipText(voteId, performanceId, "b35egsIMRiP")}
+                                hasArrow
+                                placement="top"
+                              >
+                                <Button
+                                  size="sm"
+                                  colorScheme={values[`${performanceId}-b35egsIMRiP-${voteId}`] ? "teal" : undefined}
+                                  onClick={() => {
+                                    setActionType("performance");
+                                    editField(
+                                      voteId,
+                                      performanceId,
+                                      "b35egsIMRiP",
+                                      isAdmin ||
+                                      completions[selectedPeriod ?? ""] ||
+                                      approvals[voteId]?.[selectedPeriod ?? ""]?.["approved"],
+                                      {
+                                        ...(info[`${performanceId}-b35egsIMRiP-${voteId}`] ?? {}),
+                                        voteName,
+                                        leadMDA,
+                                        ...(approvals[voteId]?.[selectedPeriod ?? ""] ?? {}),
+                                      }
+                                    );
+                                  }}
+                                >
+                                  {values[`${performanceId}-b35egsIMRiP-${voteId}`]
+                                    ? "View Performance"
+                                    : "Add Performance"}
+                                </Button>
+                              </Tooltip>
+                            ) : (
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    editField(
+                                      voteId,
+                                      performanceId,
+                                      "b35egsIMRiP",
+                                      isAdmin || completions[selectedPeriod ?? ""],
+
+                                      {
+                                        ...(info[
+                                          `${performanceId}-b35egsIMRiP-${voteId}`
+                                        ] ?? {}),
+                                        voteName,
+                                        leadMDA,
+                                        ...(approvals[voteId]?.[
+                                          selectedPeriod ?? ""
+                                        ] ?? {}),
+                                      }
+                                    )
+                                  }
+                                >
+                                  {String(
+                                    values[
+                                    `${performanceId}-b35egsIMRiP-${voteId}`
+                                    ] || "Add Performance"
+                                  ).slice(0, 25)}
+                                </Button>
+                              )}
+                          </Td>
+                          <Td>
+                            <Input
+                              bg={
+                                backgrounds[`${budgetId}-pXpEOcDkwjV-${voteId}`]
+                              }
+                              isDisabled={
+                                isAdmin || completions[selectedPeriod ?? ""]
+                              }
+                              defaultValue={
+                                values[`${budgetId}-pXpEOcDkwjV-${voteId}`] ?? ""
+                              }
+                              id="RlkUJj1WAs4-pXpEOcDkwjV-val"
+                              name="entryfield"
+                              onBlur={async (e: FocusEvent<HTMLInputElement>) => {
+                                e.persist();
+                                if (selectedPeriod) {
+                                  await postData({
+                                    de: budgetId,
+                                    co: "pXpEOcDkwjV",
+                                    ou: voteId,
+                                    ds: "fFaTViPsQBs",
+                                    value: e.target.value,
+                                    pe: selectedPeriod,
+                                  });
+                                  setValues((prev) => ({
+                                    ...prev,
+                                    [`${budgetId}-pXpEOcDkwjV-${voteId}`]:
+                                      e.target.value,
+                                  }));
+                                }
+                              }}
+                            />
+                          </Td>
+                          <Td>
+                            <Select<Option, false, GroupBase<Option>>
+                              chakraStyles={customChakraStyles}
+                              options={scores}
+                              size="sm"
+                              colorScheme="gray"
+                              isDisabled={
+                                !isAdmin || completions[selectedPeriod ?? ""]
+                              }
+                              value={scores.find(
+                                ({ value }) =>
+                                  value ===
+                                  values[`${scoreId}-G5EzBzyQXD9-${voteId}`]
+                              )}
+                              onChange={(value) => {
+                                const newVal = value ? value.value : "";
                                 setValues((prev) => ({
                                   ...prev,
-                                  [`${budgetId}-pXpEOcDkwjV-${voteId}`]:
-                                    e.target.value,
+                                  [`${scoreId}-G5EzBzyQXD9-${voteId}`]: newVal,
                                 }));
-                              }
-                            }}
-                          />
-                        </Td>
-                        <Td>
-                          <Select<Option, false, GroupBase<Option>>
-                            chakraStyles={customChakraStyles}
-                            options={scores}
-                            size="sm"
-                            colorScheme="gray"
-                            isDisabled={
-                              !isAdmin || completions[selectedPeriod ?? ""]
-                            }
-                            value={scores.find(
-                              ({ value }) =>
-                                value ===
-                                values[`${scoreId}-G5EzBzyQXD9-${voteId}`]
-                            )}
-                            onChange={(value) => {
-                              const newVal = value ? value.value : "";
-                              setValues((prev) => ({
-                                ...prev,
-                                [`${scoreId}-G5EzBzyQXD9-${voteId}`]: newVal,
-                              }));
-                              if (selectedPeriod) {
-                                postData({
-                                  de: scoreId,
-                                  co: "G5EzBzyQXD9",
-                                  ou: voteId,
-                                  ds: "fFaTViPsQBs",
-                                  value: newVal,
-                                  pe: selectedPeriod,
-                                });
-                              }
-                            }}
-                            tagVariant="solid"
-                            isClearable
-                          />
-                        </Td>
-                        <Td>
-                          {!isAdmin || completions[selectedPeriod ?? ""] ? (
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                editField(
-                                  voteId,
-                                  commentId,
-                                  "s3PFBx7asUX",
-                                  !isAdmin ||
+                                if (selectedPeriod) {
+                                  postData({
+                                    de: scoreId,
+                                    co: "G5EzBzyQXD9",
+                                    ou: voteId,
+                                    ds: "fFaTViPsQBs",
+                                    value: newVal,
+                                    pe: selectedPeriod,
+                                  });
+                                }
+                              }}
+                              tagVariant="solid"
+                              isClearable
+                            />
+                          </Td>
+                          <Td>
+                            {!isAdmin || completions[selectedPeriod ?? ""] ? (
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  editField(
+                                    voteId,
+                                    commentId,
+                                    "s3PFBx7asUX",
+                                    !isAdmin ||
                                     completions[selectedPeriod ?? ""] ||
                                     approvals[voteId]?.[selectedPeriod ?? ""]?.[
-                                      "approved"
+                                    "approved"
                                     ],
-                                  {
-                                    ...(info[
-                                      `${performanceId}-b35egsIMRiP-${voteId}`
-                                    ] ?? {}),
-                                    voteName,
-                                    leadMDA,
-                                    ...(approvals[voteId]?.[
-                                      selectedPeriod ?? ""
-                                    ] ?? {}),
-                                  }
-                                )
-                              }
-                            >
-                              {String(
-                                values[`${commentId}-s3PFBx7asUX-${voteId}`] ||
+                                    {
+                                      ...(info[
+                                        `${performanceId}-b35egsIMRiP-${voteId}`
+                                      ] ?? {}),
+                                      voteName,
+                                      leadMDA,
+                                      ...(approvals[voteId]?.[
+                                        selectedPeriod ?? ""
+                                      ] ?? {}),
+                                    }
+                                  )
+                                }
+                              >
+                                {String(
+                                  values[`${commentId}-s3PFBx7asUX-${voteId}`] ||
                                   "View Comments"
-                              ).slice(0, 25)}
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                setActionType("comments");
-                                editField(
-                                  voteId,
-                                  commentId,
-                                  "s3PFBx7asUX",
-                                  !isAdmin || completions[selectedPeriod ?? ""],
-                                  // ||
-                                  //   approvals[voteId]?.[selectedPeriod ?? ""]?.[
-                                  //     "approved"
-                                  //   ],
-                                  {
-                                    ...(info[
-                                      `${performanceId}-b35egsIMRiP-${voteId}`
-                                    ] ?? {}),
-                                    voteName,
-                                    leadMDA,
-                                    ...(approvals[voteId]?.[
-                                      selectedPeriod ?? ""
-                                    ] ?? {}),
-                                  }
-                                );
-                              }}
-                            >
-                              {String(
-                                values[`${commentId}-s3PFBx7asUX-${voteId}`] ||
-                                  "Add Comments"
-                              ).slice(0, 25)}
-                            </Button>
-                          )}
-                        </Td>
-                      </Tr>
-                    )
+                                ).slice(0, 25)}
+                              </Button>
+                            ) : (
+                                <Tooltip
+                                  label={getTooltipText(voteId, commentId, "s3PFBx7asUX")}
+                                  hasArrow
+                                  placement="top"
+                                >
+                                  <Button
+                                    size="sm"
+                                    colorScheme={values[`${commentId}-s3PFBx7asUX-${voteId}`] ? "blue" : undefined}
+                                    onClick={() => {
+                                      setActionType("comments");
+                                      editField(
+                                        voteId,
+                                        commentId,
+                                        "s3PFBx7asUX",
+                                        !isAdmin || completions[selectedPeriod ?? ""],
+                                        {
+                                          ...(info[`${performanceId}-b35egsIMRiP-${voteId}`] ?? {}),
+                                          voteName,
+                                          leadMDA,
+                                          ...(approvals[voteId]?.[selectedPeriod ?? ""] ?? {}),
+                                        }
+                                      );
+                                    }}
+                                  >
+                                    {values[`${commentId}-s3PFBx7asUX-${voteId}`]
+                                      ? "View Comments"
+                                      : "Add Comments"}
+                                  </Button>
+                                </Tooltip>
+                              )}
+                          </Td>
+                        </Tr>
+                      )
                   );
                 }
               )}
@@ -1267,7 +1397,7 @@ export default function Tab1({
                 theme="snow"
                 value={
                   values[
-                    `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
+                  `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
                   ] || ""
                 }
                 onChange={(content, delta, source, editor) => {

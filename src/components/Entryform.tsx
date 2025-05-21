@@ -20,6 +20,7 @@ import {
   Text,
 } from "@chakra-ui/react";
 import "./app.css";
+
 import { useNavigate } from "@tanstack/react-location";
 import { groupBy } from "lodash";
 import React, { useState, useEffect } from "react";
@@ -64,8 +65,6 @@ export const EntryForm = () => {
       <Stack
         h="100%"
         alignItems="center"
-        justifyContent="center"
-        justifyItems="center"
         alignContent="center"
       >
         <Spinner />
