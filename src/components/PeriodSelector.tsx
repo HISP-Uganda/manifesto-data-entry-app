@@ -28,15 +28,15 @@ export default function PeriodSelector({
         locale: "en",
       })
     );
-    return () => {};
+    return () => { };
   }, [year]);
 
   return (
-    <Stack direction="row" w="85%" spacing="20px" alignItems="center">
+    <Stack direction="row" spacing="20px" alignItems="center" flex={1}>
       <Text fontWeight="extrabold" fontSize="xl">
         Period
       </Text>
-      <Box w="300px">
+      <Box w="100%">
         <Select<Option, false, GroupBase<Option>>
           isMulti={false}
           options={periods.map((p) => ({

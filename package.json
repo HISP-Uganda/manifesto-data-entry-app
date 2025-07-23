@@ -21,12 +21,16 @@
         "@chakra-ui/icons": "^1.1.7",
         "@chakra-ui/react": "^1.8.9",
         "@dhis2/app-runtime": "^3.10.2",
+        "@dhis2/ui": "^10.7.1",
         "@emotion/react": "^11.7.1",
         "@emotion/styled": "^11.6.0",
         "@tanstack/react-location": "3.7.4",
         "@tanstack/react-query": "^4.24.4",
+        "antd": "^5.26.1",
         "chakra-react-select": "^3.1.2",
         "cors": "^2.8.5",
+        "dexie": "^4.0.11",
+        "dexie-react-hooks": "^1.1.7",
         "effector": "^23.1.0",
         "effector-react": "^23.1.0",
         "exceljs": "^4.4.0",
@@ -44,6 +48,7 @@
     },
     "resolutions": {
         "@types/react": "18.2.48",
-        "@types/react-dom": "18.2.0"
+        "@types/react-dom": "18.2.0",
+        "@dhis2/ui": "10.7.4"
     }
 }

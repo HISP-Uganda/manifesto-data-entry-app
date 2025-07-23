@@ -24,7 +24,7 @@ import "./app.css";
 import { useNavigate } from "@tanstack/react-location";
 import { groupBy } from "lodash";
 import React, { useState, useEffect } from "react";
-import { Commitment } from "../interfaces";
+import { Commitment, Option } from "../interfaces";
 import { useInitial } from "../Queries";
 import Tab1 from "./Tab1";
 
@@ -34,6 +34,7 @@ export const EntryForm = () => {
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Array<Commitment>>([]);
   const [defaultSelected, setDefaultSelected] = useState<Array<Commitment>>([]);
+  const [selectedOrgUnits, setSelectedOrgUnits] = useState<Option[]>([]);
 
   const handleButtonClick = () => {
     setIsOpen(true);
@@ -49,15 +50,28 @@ export const EntryForm = () => {
     setIsOpen(false);
   };
 
+  // Filter Key Result Areas based on selected org units
+  const getFilteredKeyResultAreas = () => {
+    if (!data || selectedOrgUnits.length === 0) {
+      return groupBy(data?.commitments || [], "dataElementGroupSetId");
+    }
+    
+    const selectedOrgUnitIds = selectedOrgUnits.map(ou => ou.value);
+    const filteredCommitments = data.commitments.filter(c => 
+      selectedOrgUnitIds.includes(c.voteId)
+    );
+    
+    return groupBy(filteredCommitments, "dataElementGroupSetId");
+  };
+
   useEffect(() => {
     if (isSuccess && data) {
-      const firstGroup = Object.entries(
-        groupBy(data.commitments, "dataElementGroupSetId")
-      )[0][1];
+      const filteredGroups = getFilteredKeyResultAreas();
+      const firstGroup = Object.entries(filteredGroups)[0]?.[1] as Commitment[] || [];
       setSelected(firstGroup);
       setDefaultSelected(firstGroup);
     }
-  }, [isSuccess, data]);
+  }, [isSuccess, data, selectedOrgUnits]);
 
   if (isError) return <pre>{JSON.stringify(error)}</pre>;
   if (isLoading)
@@ -149,9 +163,7 @@ export const EntryForm = () => {
                 <Tr>
                   <Td valign="top" p="4px" bgColor="gray.300">
                     <div className="tab">
-                      {Object.entries(
-                        groupBy(data.commitments, "dataElementGroupSetId")
-                      ).map(([id, group]) => (
+                      {Object.entries(getFilteredKeyResultAreas()).map(([id, group]) => (
                         <button
                           key={id}
                           className={`tablinks ${
@@ -160,10 +172,10 @@ export const EntryForm = () => {
                               : ""
                           }`}
                           onClick={() => {
-                            setSelected(group);
+                            setSelected(group as Commitment[]);
                           }}
                         >
-                          {group[0].keyResultsArea}
+                          {(group as Commitment[])[0]?.keyResultsArea}
                         </button>
                       ))}
                     </div>
@@ -177,6 +189,8 @@ export const EntryForm = () => {
               commitments={selected}
               isAdmin={data.isAdmin}
               orgUnits={data.organisationUnits}
+              selectedOrgUnits={selectedOrgUnits}
+              onSelectedOrgUnitsChange={setSelectedOrgUnits}
             />
           </GridItem>
         </Grid>

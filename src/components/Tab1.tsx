@@ -9,7 +9,6 @@ import {
   Button,
   Input,
   Image,
-  Icon,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -24,7 +23,6 @@ import {
   Tbody,
   Td,
   Text,
-  Textarea,
   Thead,
   Tr,
   useDisclosure,
@@ -34,7 +32,25 @@ import {
   Portal,
   MenuList,
   MenuItem,
+  Flex
 } from "@chakra-ui/react";
+
+// Suppress ResizeObserver errors
+const originalError = console.error;
+console.error = (...args: any[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('ResizeObserver loop completed with undelivered notifications')) {
+    return;
+  }
+  originalError.apply(console, args);
+};
+
+// Also handle window errors
+window.addEventListener('error', (e) => {
+  if (e.message?.includes('ResizeObserver loop completed with undelivered notifications')) {
+    e.preventDefault();
+    return false;
+  }
+});
 import { useDataEngine } from "@dhis2/app-runtime";
 import { generateFixedPeriods } from "@dhis2/multi-calendar-dates";
 import { ChakraStylesConfig, GroupBase, Select } from "chakra-react-select";
@@ -43,13 +59,9 @@ import { saveAs } from "file-saver";
 import { groupBy, uniq } from "lodash";
 import React, { FocusEvent, useEffect, useRef, useState } from "react";
 import "react-quill/dist/quill.snow.css";
-import { utils, write } from "xlsx";
-import { Commitment, Option, CurrentUser } from "../interfaces";
-import { useDataSetData } from "../Queries";
-import { FaFilePdf, FaFileCsv, FaFileWord, FaFileExcel } from "react-icons/fa";
-import type { IconType } from "react-icons";
-
-
+import { Commitment, Option } from "../interfaces";
+import { useDataSetData, useOrgUnitTree } from "../Queries";
+import { TreeSelect } from "antd";
 import {
   $approvals,
   $commitments,
@@ -58,7 +70,7 @@ import {
   completionsApi,
   $currentUser,
 } from "../Store";
-import { changeApproval, s2ab } from "../utils";
+import { changeApproval } from "../utils";
 import PeriodSelector from "./PeriodSelector";
 import { jsPDF } from "jspdf";
 import ReactQuill from "react-quill";
@@ -66,7 +78,6 @@ import "react-quill/dist/quill.snow.css";
 import Quill from "quill";
 import autoTable from 'jspdf-autotable';
 import { Tooltip } from "@chakra-ui/react";
-// import html2pdf from 'html2pdf.js';
 import ExcelJS from "exceljs";
 
 const BlockEmbed = Quill.import("blots/block/embed");
@@ -95,7 +106,7 @@ const modules = {
       ["table"],
     ],
     handlers: {
-      table: function () {
+      table: function (this: any) {
         const editor = this.quill;
         const tableHTML = `<table border="1" style="border-collapse: collapse;"><tbody><tr><td style="padding: 4px;">Cell 1</td><td style="padding: 4px;">Cell 2</td></tr><tr><td style="padding: 4px;">Cell 3</td><td style="padding: 4px;">Cell 4</td></tr></tbody></table>`;
         const range = editor.getSelection(true);
@@ -108,7 +119,7 @@ const modules = {
     matchers: [
       [
         "table",
-        function (node, delta) {
+        function (node: any) {
           return { ops: [{ insert: { html: node.outerHTML } }] };
         },
       ],
@@ -122,14 +133,19 @@ const scores = [
   { label: "3 - Not yet Implemented", value: "3", colorScheme: "red" },
 ] as Array<Option & { colorScheme: string }>;
 
+
 export default function Tab1({
   commitments,
   isAdmin,
   orgUnits,
+  selectedOrgUnits,
+  onSelectedOrgUnitsChange,
 }: {
   commitments: Array<Commitment>;
   isAdmin: boolean;
-  orgUnits: string[];
+  orgUnits: any[];
+  selectedOrgUnits: Option[];
+  onSelectedOrgUnitsChange: (orgUnits: Option[]) => void;
 }) {
   const cancelRef = useRef<any>();
 
@@ -139,7 +155,6 @@ export default function Tab1({
     onOpen: onOpenApproval,
     onClose: onCloseApproval,
   } = useDisclosure();
-  const [isOpened, setIsOpened] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
   const [actionType, setActionType] = useState("");
   const toast = useToast();
@@ -153,6 +168,28 @@ export default function Tab1({
   const completions = useUnit($completions);
   const allCommitments = useUnit($commitments);
   const approvals = useUnit($approvals);
+
+
+
+  const { data: ouTree, isLoading: ouLoading } = useOrgUnitTree();
+  const buildTreeData = (nodes: any[]): any[] =>
+    nodes.map((n) => ({
+      title: n.name,
+      value: n.id,
+      key: n.id,
+      id: n.id,
+      pId: n.parent?.id
+    }));
+  console.log("ouTree", ouTree);
+
+  const treeData = ouTree === undefined ? [] : buildTreeData(ouTree.organisationUnits);
+
+  const isLocked = completions[selectedPeriod ?? ""];
+  // const [selectedOrgUnit, setSelectedOrgUnit] = useState<Option | null>(null);
+  // const selectedOrgUnitId = selectedOrgUnit?.value ?? "";
+  // const allOptions = orgUnits.map(o => ({ value: o.id, label: o.name }))
+  // const [selectedOrgUnits, setSelectedOrgUnits] = useState<Option[]>(allOptions)
+  const selectedOrgUnitIds = selectedOrgUnits.map(o => o.value);
   const isReportApproved =
     approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.["approved"];
   const [currentTextField, setCurrentTextField] = useState<{
@@ -175,28 +212,41 @@ export default function Tab1({
   useEffect(() => {
     const currentYear = new Date().getFullYear();
     const previousFiscalYearStart = currentYear - 1;
-    const previousFiscalYearEnd = currentYear;
     const defaultPeriod = `${previousFiscalYearStart}July`;
     setSelectedPeriod(defaultPeriod);
   }, []);
 
+  // Handle ResizeObserver errors specifically from TreeSelect
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      if (event.message?.includes('ResizeObserver loop completed with undelivered notifications')) {
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      }
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (event.reason?.message?.includes('ResizeObserver loop completed with undelivered notifications')) {
+        event.preventDefault();
+        return false;
+      }
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
   const onYearChange = (diff: number) => {
     setYear((year) => year + diff);
     const selectedYear = year + diff;
     const selectedPeriod = `${selectedYear}July`;
     setSelectedPeriod(selectedPeriod);
   };
-
-  // const getTooltipText = (
-  //   voteId: string,
-  //   dataElement: string,
-  //   co: string
-  // ): string => {
-  //   return (
-  //     stripHtml(values[`${dataElement}-${co}-${voteId}`] || "") ||
-  //     "No data available"
-  //   );
-  // };
 
   const getTooltipText = (
     voteId: string,
@@ -222,12 +272,6 @@ export default function Tab1({
     return "FFFFFFFF";
   };
 
-  const getScoreRGB = (value: string): [number, number, number] => {
-    if (value === "1") return [0, 128, 0];
-    if (value === "2") return [254, 226, 0];
-    if (value === "3") return [255, 0, 0];
-    return [255, 255, 255];
-  };
 
   const customChakraStyles: ChakraStylesConfig<
     Option,
@@ -251,7 +295,6 @@ export default function Tab1({
     },
     option: (provided, state) => {
       let bg;
-      let color;
       if (state.isSelected) {
         if (state.data.value === "1") bg = "green.600";
         else if (state.data.value === "2") bg = "#FEE200";
@@ -269,23 +312,30 @@ export default function Tab1({
         color: state.isSelected ? "white" : "black",
       };
     },
-    singleValue: (provided, state) => ({
+    singleValue: (provided) => ({
       ...provided,
-      color: "white",
+      color: "black",
+      fontWeight: "bold",
     }),
   };
 
-  const { isLoading, isError, isSuccess, error, data } = useDataSetData({
-    selectedPeriod,
-    orgUnits,
+  const { data, isLoading, isError, error } = useDataSetData({
+    selectedPeriod: selectedPeriod!,
+    orgUnits: selectedOrgUnitIds,
   });
 
-  //New download button
+  //New download buttons
+
   const handleDownloadXlsx = async () => {
-    setIsOpened(false);
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Report");
+
+    const ouNames = selectedOrgUnits.map(u => u.label).join(", ");
+    const headingRow = sheet.addRow([`Vote: ${ouNames}`]);
+    headingRow.font = { bold: true };
+
+    sheet.addRow([]);
 
     sheet.columns = [
       { header: "Commitment", key: "commitment", width: 40 },
@@ -296,38 +346,42 @@ export default function Tab1({
       { header: "Comments", key: "comments", width: 40 },
     ];
 
-    allCommitments.forEach(
-      ({ commitment, MDAs, voteId, performanceId, budgetId, scoreId, commentId }) => {
-        sheet.addRow({
+    allCommitments
+      .filter(({ voteId }) => selectedOrgUnitIds.includes(voteId))
+      .forEach(({ commitment, MDAs, voteId, performanceId, budgetId, scoreId, commentId }) => {
+        const perf = stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || "");
+        const budg = stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || "");
+        const score = getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || "");
+        const comm = stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || "");
+
+        const row = sheet.addRow({
           commitment: stripHtml(commitment),
           MDAs: stripHtml(MDAs),
-          performance: stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""),
-          budget: stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""),
-          score: getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || ""),
-          comments: stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""),
+          performance: perf,
+          budget: budg,
+          score,
+          comments: comm,
         });
 
-        const row = sheet.lastRow;
-        const scoreValue = values[`${scoreId}-G5EzBzyQXD9-${voteId}`];
-        if (scoreValue && row) {
+        if (score) {
           row.getCell("score").fill = {
             type: "pattern",
             pattern: "solid",
-            fgColor: { argb: getScoreColorHex(scoreValue) },
+            fgColor: { argb: getScoreColorHex(values[`${scoreId}-G5EzBzyQXD9-${voteId}`]) },
           };
           row.getCell("score").font = { color: { argb: "FFFFFFFF" }, bold: true };
         }
-      }
-    );
+      });
 
-    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-    sheet.getRow(1).fill = {
+    const headerRow = sheet.getRow(3);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: "FF009696" },
     };
 
-    sheet.eachRow((row) => {
+    sheet.eachRow(row => {
       row.alignment = { vertical: "middle", wrapText: true };
     });
 
@@ -338,13 +392,17 @@ export default function Tab1({
     saveAs(blob, "report.xlsx");
   };
 
+
+
   const handleDownloadCsv = () => {
-    setIsOpened(false);
 
     const escapeCsv = (value: string): string => {
       const v = value?.toString().replace(/\r?\n|\r/g, " ").trim() ?? "";
       return `"${v.replace(/"/g, '""')}"`;
     };
+
+    const ouNames = selectedOrgUnits.map(u => u.label).join(", ");
+    const ouLine = `Vote (s): ${ouNames}`;
 
     const headers = [
       "subKeyResultsArea",
@@ -355,24 +413,48 @@ export default function Tab1({
       "budget",
       "score",
       "comments",
-    ];
+    ].join(",");
 
-    const rows = allCommitments.map(
-      ({ subKeyResultsArea, commitment, MDAs, scoreCode, voteId, performanceId, budgetId, scoreId, commentId }) => [
-        escapeCsv(stripHtml(subKeyResultsArea)),
-        escapeCsv(String(scoreCode).replace("SC-", "")),
-        escapeCsv(stripHtml(commitment)),
-        escapeCsv(stripHtml(MDAs)),
-        escapeCsv(stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || "")),
-        escapeCsv(stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || "")),
-        escapeCsv(getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || "")),
-        escapeCsv(stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || "")),
-      ].join(",")
-    );
+    const rows = allCommitments
+      .filter(({ voteId }) => selectedOrgUnitIds.includes(voteId))
+      .map(
+        ({
+          subKeyResultsArea,
+          commitment,
+          MDAs,
+          scoreCode,
+          voteId,
+          performanceId,
+          budgetId,
+          scoreId,
+          commentId,
+        }) =>
+          [
+            escapeCsv(stripHtml(subKeyResultsArea)),
+            escapeCsv(String(scoreCode).replace("SC-", "")),
+            escapeCsv(stripHtml(commitment)),
+            escapeCsv(stripHtml(MDAs)),
+            escapeCsv(
+              stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || "")
+            ),
+            escapeCsv(
+              stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || "")
+            ),
+            escapeCsv(
+              getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || "")
+            ),
+            escapeCsv(
+              stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || "")
+            ),
+          ].join(",")
+      );
 
-    const csvContent = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    saveAs(blob, "export.csv");
+    const csvContent = [ouLine, "", headers, ...rows].join("\n");
+
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    saveAs(blob, `report_${ouNames}.csv`);
   };
 
   const stripHtml = (html: string): string => {
@@ -382,29 +464,57 @@ export default function Tab1({
   };
 
   const handleDownloadPdf = () => {
-    setIsOpened(false);
 
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a2' });
 
-    const headers = ["Commitment", "MDAs", "Performance", "Budget", "Score", "Comments"];
+    const ouNames = selectedOrgUnits.map((u) => u.label).join(', ');
+    const ouHeader = `Vote (s): ${ouNames}`;
+    const marginLeft = 40;
+    const headerY = 30;
+    doc.setFontSize(14);
+    doc.text(ouHeader, marginLeft, headerY);
 
-    const rows = allCommitments.map(({ commitment, MDAs, voteId, performanceId, budgetId, scoreId, commentId }) => [
-      stripHtml(commitment),
-      stripHtml(MDAs),
-      stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""),
-      stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""),
-      getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || ""),
-      stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || "")
-    ]);
+    const headers = [
+      "Commitment",
+      "MDAs",
+      "Performance",
+      "Budget",
+      "Score",
+      "Comments",
+    ];
+
+    const rows = allCommitments
+      .filter(({ voteId }) => selectedOrgUnitIds.includes(voteId))
+      .map(
+        ({
+          commitment,
+          MDAs,
+          voteId,
+          performanceId,
+          budgetId,
+          scoreId,
+          commentId,
+        }) => [
+            stripHtml(commitment),
+            stripHtml(MDAs),
+            stripHtml(values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""),
+            stripHtml(values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""),
+            getScoreLabel(values[`${scoreId}-G5EzBzyQXD9-${voteId}`] || ""),
+            stripHtml(values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""),
+          ]
+      );
 
     autoTable(doc, {
+      theme: 'grid',
       head: [headers],
       body: rows,
-      startY: 20,
+      startY: headerY + 20,
       styles: {
         fontSize: 14,
         cellPadding: 6,
         overflow: 'linebreak',
+        lineColor: [0, 0, 0],
+        lineWidth: 0.5,
       },
       headStyles: {
         fillColor: [0, 150, 150],
@@ -436,16 +546,26 @@ export default function Tab1({
       },
     });
 
-    doc.save("report.pdf");
+    const safeName = ouNames.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+    doc.save(`report_${safeName}.pdf`);
   };
+
+
+  //Handling the Download Report Button
+
+
   const handleDownloadWord = () => {
-    setIsOpened(false);
+
+    const ouNames = selectedOrgUnits.map((u) => u.label).join(', ');
+    const headerHtml = `<p style="font-size:16px; font-weight:bold; margin-bottom:12px;">
+                        Vote (s): ${ouNames}
+                      </p>`;
+    const safeName = ouNames.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
 
     const columnWidths = ["20%", "15%", "20%", "10%", "10%", "25%"];
 
-    const container = document.createElement("div");
-
-    container.innerHTML = allCommitments
+    const rowsHtml = allCommitments
+      .filter(({ voteId }) => selectedOrgUnitIds.includes(voteId))
       .map(
         ({
           commitment,
@@ -468,105 +588,52 @@ export default function Tab1({
                   : "white";
 
           return `
-        <table style="border-collapse: collapse; width: 100%; table-layout: fixed; margin-bottom: 16px; font-size: 14px;" border="1">
-          <thead>
-            <tr style="background-color: #009696; color: white;">
-              <th style="padding: 8px; width: ${columnWidths[0]}">Commitment</th>
-              <th style="padding: 8px; width: ${columnWidths[1]}">MDAs</th>
-              <th style="padding: 8px; width: ${columnWidths[2]}">Performance</th>
-              <th style="padding: 8px; width: ${columnWidths[3]}">Budget</th>
-              <th style="padding: 8px; width: ${columnWidths[4]}">Score</th>
-              <th style="padding: 8px; width: ${columnWidths[5]}">Comments</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style="padding: 8px; word-wrap: break-word;">${commitment}</td>
-              <td style="padding: 8px; word-wrap: break-word;">${MDAs}</td>
-              <td style="padding: 8px; word-wrap: break-word;">${values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""}</td>
-              <td style="padding: 8px; word-wrap: break-word;">${values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""}</td>
-              <td style="padding: 8px; word-wrap: break-word; background-color: ${scoreBg}; color: white;">${scoreLabel}</td>
-              <td style="padding: 8px; word-wrap: break-word;">${values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""}</td>
-            </tr>
-          </tbody>
-        </table>
-      `;
+<table style="border-collapse: collapse; width: 100%; table-layout: fixed; margin-bottom: 16px; font-size: 14px;" border="1">
+  <thead>
+    <tr style="background-color: #009696; color: white;">
+      <th style="padding: 8px; width: ${columnWidths[0]}">Commitment</th>
+      <th style="padding: 8px; width: ${columnWidths[1]}">MDAs</th>
+      <th style="padding: 8px; width: ${columnWidths[2]}">Performance</th>
+      <th style="padding: 8px; width: ${columnWidths[3]}">Budget</th>
+      <th style="padding: 8px; width: ${columnWidths[4]}">Score</th>
+      <th style="padding: 8px; width: ${columnWidths[5]}">Comments</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="padding: 8px; word-wrap: break-word;">${commitment}</td>
+      <td style="padding: 8px; word-wrap: break-word;">${MDAs}</td>
+      <td style="padding: 8px; word-wrap: break-word;">${values[`${performanceId}-b35egsIMRiP-${voteId}`] || ""}</td>
+      <td style="padding: 8px; word-wrap: break-word;">${values[`${budgetId}-pXpEOcDkwjV-${voteId}`] || ""}</td>
+      <td style="padding: 8px; word-wrap: break-word; background-color: ${scoreBg}; color: white;">${scoreLabel}</td>
+      <td style="padding: 8px; word-wrap: break-word;">${values[`${commentId}-s3PFBx7asUX-${voteId}`] || ""}</td>
+    </tr>
+  </tbody>
+</table>
+`;
         }
       )
       .join("");
 
     const wordDocHTML = `
-  <html xmlns:o='urn:schemas-microsoft-com:office:office'
-        xmlns:w='urn:schemas-microsoft-com:office:word'
-        xmlns='http://www.w3.org/TR/REC-html40'>
-    <head><meta charset='utf-8'><title>Report</title></head>
-    <body style="font-family: Arial, sans-serif; padding: 20px;">
-      ${container.innerHTML}
-    </body>
-  </html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office'
+      xmlns:w='urn:schemas-microsoft-com:office:word'
+      xmlns='http://www.w3.org/TR/REC-html40'>
+  <head><meta charset='utf-8'><title>Report</title></head>
+  <body style="font-family: Arial, sans-serif; padding: 20px;">
+    ${headerHtml}
+    ${rowsHtml}
+  </body>
+</html>
 `;
 
     const blob = new Blob(["\ufeff", wordDocHTML], {
       type: "application/msword",
     });
-
-    saveAs(blob, "report.doc");
+    saveAs(blob, `report_${safeName}.doc`);
   };
 
 
-  //Handling the Download Report Button
-
-  const handleButtonClick = () => {
-    console.log("Download Report button clicked");
-    setIsOpened(() => true);
-  };
-  const handleConfirm = () => {
-    setIsOpened(() => false);
-    let wb = utils.book_new();
-    wb.Props = {
-      Title: "SheetJS Tutorial",
-      Subject: "Test",
-      Author: "Red Stapler",
-      CreatedDate: new Date(),
-    };
-
-    wb.SheetNames.push("Listing");
-    let ws = utils.json_to_sheet(
-      allCommitments.map(
-        ({
-          subKeyResultsArea,
-          commitment,
-          MDAs,
-          scoreCode,
-          voteId,
-          performanceId,
-          budgetId,
-          scoreId,
-          commentId,
-        }) => ({
-          subKeyResultsArea,
-          scoreCode: String(scoreCode).replace("SC-", ""),
-          commitment,
-          MDAs,
-          performance: values[`${performanceId}-b35egsIMRiP-${voteId}`],
-          budget: values[`${budgetId}-pXpEOcDkwjV-${voteId}`],
-          score: values[`${scoreId}-G5EzBzyQXD9-${voteId}`],
-          comments: values[`${commentId}-s3PFBx7asUX-${voteId}`],
-        })
-      )
-    );
-    wb.Sheets["Listing"] = ws;
-
-    const wbout = write(wb, { bookType: "xlsx", type: "binary" });
-    saveAs(
-      new Blob([s2ab(wbout)], { type: "application/octet-stream" }),
-      "export.xlsx"
-    );
-  };
-
-  const handleClose = () => {
-    setIsOpened(() => false);
-  };
   //Handling the Submit and Lock button plus the Recall and Edit button
 
   const handleSubmitAndLockClick = (type: string) => {
@@ -592,14 +659,15 @@ export default function Tab1({
       onCloseApproval();
     }
   };
+  const saveContent = async () => {
+    if (!selectedPeriod) return;
 
-  const saveContent = () => {
-    if (selectedPeriod) {
-      const content =
-        values[
-        `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
-        ] || "";
-      postData({
+    const content =
+      values[`${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`] ||
+      "";
+
+    try {
+      await postData({
         de: currentTextField.dataElement,
         co: currentTextField.co,
         ou: currentTextField.voteId,
@@ -607,8 +675,22 @@ export default function Tab1({
         value: content,
         pe: selectedPeriod,
       });
+      toast({
+        title: "Content saved",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to save content",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
+
 
   const handleConfirmSubmitAndLock = async () => {
     setIsLoad(true);
@@ -764,24 +846,6 @@ export default function Tab1({
     }
   };
 
-  const chakraStyles: ChakraStylesConfig<Option, false, GroupBase<Option>> = {
-    container: (provided, state) => {
-      let border = "";
-      if (state.getValue().length > 0) {
-        if (state.getValue()[0].value === "1") {
-          border = "1px green solid";
-        } else if (state.getValue()[0].value === "2") {
-          border = "1px orange solid";
-        } else if (state.getValue()[0].value === "3") {
-          border = "1px red solid";
-        }
-      }
-      return {
-        ...provided,
-        border,
-      };
-    },
-  };
 
   const editField = (
     voteId: string,
@@ -801,22 +865,56 @@ export default function Tab1({
     onOpen();
   };
 
-  const DownloadReportButton = () => (
-    <MenuButton
-      as={Button}
-      color="#ffff"
-      backgroundColor="#009696"
-      _hover={{ bg: "yellow.500", color: "#ffff" }}
-      size="sm"
-      marginTop="7px"
-    >
-      Download Report
-    </MenuButton>
-  );
   return (
     <Stack h="100%">
-      <Stack direction="row" h="48px" minH="48px" maxH="48px">
-        <Stack ml="2" zIndex={20}>
+      <Stack
+        direction="row"
+        h="48px"
+        minH="48px"
+        maxH="48px"
+        position="sticky"
+        top="0"
+        zIndex="20"
+        bg="white"
+      >
+        <Stack ml="2" zIndex={20} direction="row" align="center" spacing={2} w="40%">
+          <Box w="50%">
+
+            {ouLoading ? (
+              <Spinner size="sm" />
+            ) : (
+
+                <TreeSelect
+                  style={{ width: '100%' }}
+                  treeData={treeData}
+                  value={selectedOrgUnitIds}
+                  placeholder="Select Vote(s)"
+                  allowClear
+                  showSearch
+                  treeCheckable
+                  treeDataSimpleMode
+                  maxTagCount={1}
+                  filterTreeNode={(input, treeNode) => {
+                    const title = (treeNode.title as string).toLowerCase();
+                    return input
+                      .toLowerCase()
+                      .trim()
+                      .split(/\s+/)
+                      .every((term) => title.includes(term));
+                  }}
+                  treeDefaultExpandAll={false}
+                  treeDefaultExpandedKeys={[]}
+                  onChange={(values: string[], labelList) => {
+                    onSelectedOrgUnitsChange(
+                      values.map((val, idx) => ({
+                        value: val,
+                        label: String(labelList[idx]),
+                      }))
+                    );
+                  }}
+                />
+              )}
+          </Box>
           <PeriodSelector
             selectedPeriod={selectedPeriod}
             onYearChange={onYearChange}
@@ -826,6 +924,7 @@ export default function Tab1({
             setSelectedPeriod={setSelectedPeriod}
           />
         </Stack>
+
         <Stack direction="row" pt="1" spacing="4">
           <Text fontWeight="extrabold" fontSize="xl">
             Legend:
@@ -878,11 +977,7 @@ export default function Tab1({
         </Stack>
         <Spacer />
         <Stack>
-          {/* {!isAdmin && completions[selectedPeriod ?? ""] && (
-            <Text color="green.500" fontSize="lg" fontWeight="bold" mb="4">
-              This report has been approved.
-            </Text>
-          )} */}
+
         </Stack>
         <Spacer />
         <Menu>
@@ -907,7 +1002,7 @@ export default function Tab1({
                     alignItems: "center",
                   }}
                 >
-                  <FaFilePdf />
+                  📄
                 </span>
                 PDF
               </MenuItem>
@@ -920,7 +1015,7 @@ export default function Tab1({
                     alignItems: "center",
                   }}
                 >
-                  <FaFileCsv />
+                  📊
                 </span>
                 CSV
               </MenuItem>
@@ -933,7 +1028,7 @@ export default function Tab1({
                     alignItems: "center",
                   }}
                 >
-                  <FaFileExcel style={{ fontSize: "1rem" }} />
+                  📗
 
                 </span>
                 XLSX
@@ -947,7 +1042,7 @@ export default function Tab1({
                     alignItems: "center",
                   }}
                 >
-                  <FaFileWord />
+                  📝
                 </span>
                 WORD
               </MenuItem>
@@ -955,382 +1050,423 @@ export default function Tab1({
           </Portal>
         </Menu>
       </Stack>
-      {isError && <pre>{JSON.stringify(error, null, 2)}</pre>}
-      {isLoading && (
-        <Stack
-          h="100%"
-          alignItems="center"
-          justifyContent="center"
-          justifyItems="center"
-          alignContent="center"
-        >
+
+      {/* {!selectedOrgUnitIds || !selectedPeriod ? ( */}
+      {selectedOrgUnitIds.length === 0 ? (
+        <Box p={6}>
+          <Text color="gray.600">
+            👋 Please select one or more Votes above to see commitments.    </Text>
+        </Box>
+      ) : isError ? (
+        <Box p={6}>
+          <Text color="red.500">Error loading data: {error?.message}</Text>
+        </Box>
+      ) : isLoading ? (
+        <Stack flex={1} align="center" justify="center">
           <Spinner />
         </Stack>
-      )}
-      {isSuccess && (
-        <Box h="calc(100vh - 144px - 80px)" overflow="auto">
-          <Table size="sm" flex={1}>
-            <Thead
-              bgColor="#019696"
-              color="white"
-              position="sticky"
-              top="0"
-              zIndex={10}
-              boxShadow="md"
-            >
-              <Tr fontWeight="bold">
-                <Td width="40px">{commitments[0]?.keyResultsArea}</Td>
-                <Td w="100px">Code</Td>
-                <Td w="500px" minW="500px" maxW="500px">
-                  Manifesto Commitment
+      ) : (
+              <Box
+                h="calc(100vh - 144px - 60px)"
+                overflow="auto"
+              >
+                <Table size="sm" flex={1}>
+                  <Thead
+                    bgColor="#019696"
+                    color="white"
+                    position="sticky"
+                    top="0"
+                    zIndex={10}
+                    boxShadow="md"
+                  >
+                    <Tr fontWeight="bold">
+                      <Td width="200px">Key Results Area</Td>
+                      <Td width="200px">Sub Key Results Area</Td>
+                      <Td w="100px">Code</Td>
+                      <Td w="500px" minW="500px" maxW="500px">
+                        Manifesto Commitment
                 </Td>
-                <Td w="50px">Lead MDA</Td>
-                <Td>Performance (Annual and Cumulative )</Td>
-                <Td w="100px" minW="100px" maxW="100px">
-                  <p>
-                    Budgetary expenditure <br /> (Ugx Bn)
+                      <Td w="50px">Lead MDA</Td>
+                      <Td>Performance (Annual and Cumulative )</Td>
+                      <Td w="100px" minW="100px" maxW="100px">
+                        <p>
+                          Budgetary expenditure <br /> (Ugx Bn)
                   </p>
-                </Td>
-                <Td w="170px">Annual Performance Score</Td>
-                <Td>Comments (Score)</Td>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {Object.entries(groupBy(commitments, "subKeyResultsArea")).map(
-                ([sbka, groups]: [string, Commitment[]]) => {
-                  return groups.map(
-                    (
-                      {
-                        subKeyResultsArea,
-                        commitment,
-                        MDAs,
-                        scoreCode,
-                        voteId,
-                        performanceId,
-                        budgetId,
-                        scoreId,
-                        commentId,
-                        leadMDA,
-                        voteName,
-                      },
-                      index
-                    ) => (
-                        <Tr>
-                          {index === 0 && (
-                            <Td rowSpan={groups.length}>{subKeyResultsArea}</Td>
-                          )}
-                          <Td>{String(scoreCode).replace("SC-", "")}</Td>
-                          <Td>{commitment}</Td>
-                          <Td>{MDAs}</Td>
-                          <Td>
-                            {isAdmin || completions[selectedPeriod ?? ""] ? (
-                              <Tooltip
-                                label={getTooltipText(voteId, performanceId, "b35egsIMRiP")}
-                                hasArrow
-                                placement="top"
-                              >
-                                <Button
-                                  size="sm"
-                                  colorScheme={values[`${performanceId}-b35egsIMRiP-${voteId}`] ? "teal" : undefined}
-                                  onClick={() => {
-                                    setActionType("performance");
-                                    editField(
-                                      voteId,
-                                      performanceId,
-                                      "b35egsIMRiP",
-                                      isAdmin ||
-                                      completions[selectedPeriod ?? ""] ||
-                                      approvals[voteId]?.[selectedPeriod ?? ""]?.["approved"],
-                                      {
-                                        ...(info[`${performanceId}-b35egsIMRiP-${voteId}`] ?? {}),
-                                        voteName,
-                                        leadMDA,
-                                        ...(approvals[voteId]?.[selectedPeriod ?? ""] ?? {}),
-                                      }
-                                    );
-                                  }}
-                                >
-                                  {values[`${performanceId}-b35egsIMRiP-${voteId}`]
-                                    ? "View Performance"
-                                    : "Add Performance"}
-                                </Button>
-                              </Tooltip>
-                            ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() =>
-                                    editField(
-                                      voteId,
-                                      performanceId,
-                                      "b35egsIMRiP",
-                                      isAdmin || completions[selectedPeriod ?? ""],
+                      </Td>
+                      <Td w="170px">Annual Performance Score</Td>
+                      <Td>Comments (Score)</Td>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {Object.entries(groupBy(commitments.filter((c) => selectedOrgUnitIds.includes(c.voteId)), "keyResultsArea")).map(
+                      ([keyResultsArea, keyResultGroups]: [string, Commitment[]]) => {
+                        return Object.entries(groupBy(keyResultGroups, "subKeyResultsArea")).map(
+                          ([subKeyResultsArea, groups]: [string, Commitment[]], kraIndex) => {
+                            return groups.map(
+                              (
+                                {
+                                  commitment,
+                                  MDAs,
+                                  scoreCode,
+                                  voteId,
+                                  performanceId,
+                                  budgetId,
+                                  scoreId,
+                                  commentId,
+                                  leadMDA,
+                                  voteName,
+                                },
+                                index
+                              ) => (
+                                  <Tr key={`${keyResultsArea}-${subKeyResultsArea}-${scoreCode}-${voteId}`}>
+                                    {kraIndex === 0 && index === 0 && (
+                                      <Td 
+                                        rowSpan={keyResultGroups.length} 
+                                        bg="gray.50" 
+                                        fontWeight="bold"
+                                        borderRight="2px solid"
+                                        borderColor="gray.300"
+                                      >
+                                        {keyResultsArea}
+                                      </Td>
+                                    )}
+                                    {index === 0 && (
+                                      <Td 
+                                        rowSpan={groups.length}
+                                        bg="gray.25"
+                                        borderRight="1px solid"
+                                        borderColor="gray.200"
+                                      >
+                                        {subKeyResultsArea}
+                                      </Td>
+                                    )}
+                                    <Td>{String(scoreCode).replace("SC-", "")}</Td>
+                                    <Td>{commitment}</Td>
+                                <Td>{MDAs}</Td>
+                                <Td>
+                                  {isAdmin || completions[selectedPeriod ?? ""] ? (
+                                    <Tooltip
+                                      label={getTooltipText(voteId, performanceId, "b35egsIMRiP")}
+                                      hasArrow
+                                      placement="top"
+                                    >
+                                      <Button
+                                        size="sm"
+                                        colorScheme={values[`${performanceId}-b35egsIMRiP-${voteId}`] ? "teal" : undefined}
+                                        onClick={() => {
+                                          setActionType("performance");
+                                          editField(
+                                            voteId,
+                                            performanceId,
+                                            "b35egsIMRiP",
+                                            isAdmin ||
+                                            completions[selectedPeriod ?? ""] ||
+                                            approvals[voteId]?.[selectedPeriod ?? ""]?.["approved"],
+                                            {
+                                              ...(info[`${performanceId}-b35egsIMRiP-${voteId}`] ?? {}),
+                                              voteName,
+                                              leadMDA,
+                                              ...(approvals[voteId]?.[selectedPeriod ?? ""] ?? {}),
+                                            }
+                                          );
+                                        }}
+                                      >
+                                        {values[`${performanceId}-b35egsIMRiP-${voteId}`]
+                                          ? "View Performance"
+                                          : "Add Performance"}
+                                      </Button>
+                                    </Tooltip>
+                                  ) : (
+                                      <Button
+                                        size="sm"
+                                        onClick={() =>
+                                          editField(
+                                            voteId,
+                                            performanceId,
+                                            "b35egsIMRiP",
+                                            isAdmin || completions[selectedPeriod ?? ""],
 
-                                      {
-                                        ...(info[
-                                          `${performanceId}-b35egsIMRiP-${voteId}`
-                                        ] ?? {}),
-                                        voteName,
-                                        leadMDA,
-                                        ...(approvals[voteId]?.[
-                                          selectedPeriod ?? ""
-                                        ] ?? {}),
-                                      }
-                                    )
-                                  }
-                                >
-                                  {String(
-                                    values[
-                                    `${performanceId}-b35egsIMRiP-${voteId}`
-                                    ] || "Add Performance"
-                                  ).slice(0, 25)}
-                                </Button>
-                              )}
-                          </Td>
-                          <Td>
-                            <Input
-                              bg={
-                                backgrounds[`${budgetId}-pXpEOcDkwjV-${voteId}`]
-                              }
-                              isDisabled={
-                                isAdmin || completions[selectedPeriod ?? ""]
-                              }
-                              defaultValue={
-                                values[`${budgetId}-pXpEOcDkwjV-${voteId}`] ?? ""
-                              }
-                              id="RlkUJj1WAs4-pXpEOcDkwjV-val"
-                              name="entryfield"
-                              onBlur={async (e: FocusEvent<HTMLInputElement>) => {
-                                e.persist();
-                                if (selectedPeriod) {
-                                  await postData({
-                                    de: budgetId,
-                                    co: "pXpEOcDkwjV",
-                                    ou: voteId,
-                                    ds: "fFaTViPsQBs",
-                                    value: e.target.value,
-                                    pe: selectedPeriod,
-                                  });
-                                  setValues((prev) => ({
-                                    ...prev,
-                                    [`${budgetId}-pXpEOcDkwjV-${voteId}`]:
-                                      e.target.value,
-                                  }));
-                                }
-                              }}
-                            />
-                          </Td>
-                          <Td>
-                            <Select<Option, false, GroupBase<Option>>
-                              chakraStyles={customChakraStyles}
-                              options={scores}
-                              size="sm"
-                              colorScheme="gray"
-                              isDisabled={
-                                !isAdmin || completions[selectedPeriod ?? ""]
-                              }
-                              value={scores.find(
-                                ({ value }) =>
-                                  value ===
-                                  values[`${scoreId}-G5EzBzyQXD9-${voteId}`]
-                              )}
-                              onChange={(value) => {
-                                const newVal = value ? value.value : "";
-                                setValues((prev) => ({
-                                  ...prev,
-                                  [`${scoreId}-G5EzBzyQXD9-${voteId}`]: newVal,
-                                }));
-                                if (selectedPeriod) {
-                                  postData({
-                                    de: scoreId,
-                                    co: "G5EzBzyQXD9",
-                                    ou: voteId,
-                                    ds: "fFaTViPsQBs",
-                                    value: newVal,
-                                    pe: selectedPeriod,
-                                  });
-                                }
-                              }}
-                              tagVariant="solid"
-                              isClearable
-                            />
-                          </Td>
-                          <Td>
-                            {!isAdmin || completions[selectedPeriod ?? ""] ? (
-                              <Button
-                                size="sm"
-                                onClick={() =>
-                                  editField(
-                                    voteId,
-                                    commentId,
-                                    "s3PFBx7asUX",
-                                    !isAdmin ||
-                                    completions[selectedPeriod ?? ""] ||
-                                    approvals[voteId]?.[selectedPeriod ?? ""]?.[
-                                    "approved"
-                                    ],
-                                    {
-                                      ...(info[
-                                        `${performanceId}-b35egsIMRiP-${voteId}`
-                                      ] ?? {}),
-                                      voteName,
-                                      leadMDA,
-                                      ...(approvals[voteId]?.[
-                                        selectedPeriod ?? ""
-                                      ] ?? {}),
-                                    }
-                                  )
-                                }
-                              >
-                                {String(
-                                  values[`${commentId}-s3PFBx7asUX-${voteId}`] ||
-                                  "View Comments"
-                                ).slice(0, 25)}
-                              </Button>
-                            ) : (
-                                <Tooltip
-                                  label={getTooltipText(voteId, commentId, "s3PFBx7asUX")}
-                                  hasArrow
-                                  placement="top"
-                                >
-                                  <Button
-                                    size="sm"
-                                    colorScheme={values[`${commentId}-s3PFBx7asUX-${voteId}`] ? "blue" : undefined}
-                                    onClick={() => {
-                                      setActionType("comments");
-                                      editField(
-                                        voteId,
-                                        commentId,
-                                        "s3PFBx7asUX",
-                                        !isAdmin || completions[selectedPeriod ?? ""],
-                                        {
-                                          ...(info[`${performanceId}-b35egsIMRiP-${voteId}`] ?? {}),
-                                          voteName,
-                                          leadMDA,
-                                          ...(approvals[voteId]?.[selectedPeriod ?? ""] ?? {}),
+                                            {
+                                              ...(info[
+                                                `${performanceId}-b35egsIMRiP-${voteId}`
+                                              ] ?? {}),
+                                              voteName,
+                                              leadMDA,
+                                              ...(approvals[voteId]?.[
+                                                selectedPeriod ?? ""
+                                              ] ?? {}),
+                                            }
+                                          )
                                         }
-                                      );
+                                      >
+                                        {String(
+                                          values[
+                                          `${performanceId}-b35egsIMRiP-${voteId}`
+                                          ] || "Add Performance"
+                                        ).slice(0, 25)}
+                                      </Button>
+                                    )}
+                                </Td>
+                                <Td>
+                                  <Input
+                                    bg={
+                                      backgrounds[`${budgetId}-pXpEOcDkwjV-${voteId}`]
+                                    }
+                                    isDisabled={
+                                      isAdmin || completions[selectedPeriod ?? ""]
+                                    }
+                                    defaultValue={
+                                      values[`${budgetId}-pXpEOcDkwjV-${voteId}`] ?? ""
+                                    }
+                                    id="RlkUJj1WAs4-pXpEOcDkwjV-val"
+                                    name="entryfield"
+                                    onBlur={async (e: FocusEvent<HTMLInputElement>) => {
+                                      e.persist();
+                                      if (selectedPeriod) {
+                                        await postData({
+                                          de: budgetId,
+                                          co: "pXpEOcDkwjV",
+                                          ou: voteId,
+                                          ds: "fFaTViPsQBs",
+                                          value: e.target.value,
+                                          pe: selectedPeriod,
+                                        });
+                                        setValues((prev) => ({
+                                          ...prev,
+                                          [`${budgetId}-pXpEOcDkwjV-${voteId}`]:
+                                            e.target.value,
+                                        }));
+                                      }
                                     }}
-                                  >
-                                    {values[`${commentId}-s3PFBx7asUX-${voteId}`]
-                                      ? "View Comments"
-                                      : "Add Comments"}
-                                  </Button>
-                                </Tooltip>
-                              )}
-                          </Td>
-                        </Tr>
+                                  />
+                                </Td>
+                                <Td>
+                                  <Select<Option, false, GroupBase<Option>>
+                                    chakraStyles={customChakraStyles}
+                                    options={scores}
+                                    size="sm"
+                                    colorScheme="gray"
+                                    isDisabled={
+                                      !isAdmin || completions[selectedPeriod ?? ""]
+                                    }
+                                    value={scores.find(
+                                      ({ value }) =>
+                                        value ===
+                                        values[`${scoreId}-G5EzBzyQXD9-${voteId}`]
+                                    )}
+                                    onChange={(value) => {
+                                      const newVal = value ? value.value : "";
+                                      setValues((prev) => ({
+                                        ...prev,
+                                        [`${scoreId}-G5EzBzyQXD9-${voteId}`]: newVal,
+                                      }));
+                                      if (selectedPeriod) {
+                                        postData({
+                                          de: scoreId,
+                                          co: "G5EzBzyQXD9",
+                                          ou: voteId,
+                                          ds: "fFaTViPsQBs",
+                                          value: newVal,
+                                          pe: selectedPeriod,
+                                        });
+                                      }
+                                    }}
+                                    tagVariant="solid"
+                                    isClearable
+                                  />
+                                </Td>
+                                <Td>
+                                  {isAdmin || completions[selectedPeriod ?? ""] ? (
+                                    <Tooltip
+                                      label={getTooltipText(voteId, commentId, "s3PFBx7asUX")}
+                                      hasArrow
+                                      placement="top"
+                                    >
+                                      <Button
+                                        size="sm"
+                                        colorScheme={
+                                          values[`${commentId}-s3PFBx7asUX-${voteId}`]
+                                            ? "blue"
+                                            : undefined
+                                        }
+                                        onClick={() =>
+                                          editField(
+                                            voteId,
+                                            commentId,
+                                            "s3PFBx7asUX",
+                                            !isAdmin ||
+                                            completions[selectedPeriod ?? ""] ||
+                                            approvals[voteId]?.[selectedPeriod ?? ""]?.[
+                                            "approved"
+                                            ],
+                                            {
+                                              ...(info[
+                                                `${performanceId}-b35egsIMRiP-${voteId}`
+                                              ] ?? {}),
+                                              voteName,
+                                              leadMDA,
+                                              ...(approvals[voteId]?.[
+                                                selectedPeriod ?? ""
+                                              ] ?? {}),
+                                            }
+                                          )
+                                        }
+                                      >
+                                        {values[`${commentId}-s3PFBx7asUX-${voteId}`]
+                                          ? "View Comments"
+                                          : "Add Comments"}
+                                      </Button>
+                                    </Tooltip>
+                                  ) : (
+                                      <Tooltip
+                                        label={getTooltipText(voteId, commentId, "s3PFBx7asUX")}
+                                        hasArrow
+                                        placement="top"
+                                      >
+                                        <Button
+                                          size="sm"
+                                          colorScheme={values[`${commentId}-s3PFBx7asUX-${voteId}`] ? "blue" : undefined}
+                                          isDisabled={isLocked}
+                                          onClick={() => {
+                                            if (isLocked) return;
+                                            setActionType("comments");
+                                            editField(
+                                              voteId,
+                                              commentId,
+                                              "s3PFBx7asUX",
+                                              !isAdmin || completions[selectedPeriod ?? ""],
+                                              {
+                                                ...(info[`${performanceId}-b35egsIMRiP-${voteId}`] ?? {}),
+                                                voteName,
+                                                leadMDA,
+                                                ...(approvals[voteId]?.[selectedPeriod ?? ""] ?? {}),
+                                              }
+                                            );
+                                          }}
+                                        >
+                                          {values[`${commentId}-s3PFBx7asUX-${voteId}`]
+                                            ? "View Comments"
+                                            : "Add Comments"}
+                                        </Button>
+                                      </Tooltip>
+                                    )}
+                                </Td>
+                              </Tr>
+                              )
+                            );
+                          }
+                        );
+                      }
+                    )}
+                  </Tbody>
+                </Table>
+                {isAdmin && (
+                  <Button
+                    colorScheme={completions[selectedPeriod ?? ""] ? "red" : "green"}
+                    color="black"
+                    size="sm"
+                    position="fixed"
+                    bottom="20px"
+                    left="250px"
+                    onClick={() =>
+                      handleSubmitAndLockClick(
+                        completions[selectedPeriod ?? ""] ? "recall" : "submit"
                       )
-                  );
-                }
-              )}
-            </Tbody>
-          </Table>
-          {isAdmin && (
-            <Button
-              colorScheme={completions[selectedPeriod ?? ""] ? "red" : "green"}
-              size="sm"
-              position="fixed"
-              bottom="20px"
-              left="250px"
-              onClick={() =>
-                handleSubmitAndLockClick(
-                  completions[selectedPeriod ?? ""] ? "recall" : "submit"
-                )
-              }
-            >
-              {completions[selectedPeriod ?? ""]
-                ? "Recall Data and Edit"
-                : "Submit and Lock"}
-            </Button>
-          )}
-          {!isAdmin && !completions[selectedPeriod ?? ""] && (
-            <Button
-              size="sm"
-              position="fixed"
-              backgroundColor={
-                approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
-                  "approved"
-                ]
-                  ? "green.500"
-                  : "#009696"
-              }
-              isDisabled={isReportApproved}
-              color="#FFF"
-              bottom="20px"
-              right="20px"
-              onClick={() => onOpenApproval()}
-              _hover={{
-                color: "#000000",
-              }}
-            >
-              {approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
-                "approved"
-              ]
-                ? "Report Approved"
-                : "Submit and Approve Report"}
-            </Button>
-          )}
+                    }
+                  >
+                    {completions[selectedPeriod ?? ""]
+                      ? "Recall Data and Edit"
+                      : "Submit and Lock"}
+                  </Button>
+                )}
+                {!isAdmin && !completions[selectedPeriod ?? ""] && (
+                  <Button
+                    size="sm"
+                    position="fixed"
+                    backgroundColor={
+                      approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
+                        "approved"
+                      ]
+                        ? "green.500"
+                        : "#009696"
+                    }
+                    isDisabled={isReportApproved}
+                    color="#FFF"
+                    bottom="20px"
+                    right="20px"
+                    onClick={() => onOpenApproval()}
+                    _hover={{
+                      color: "#000000",
+                    }}
+                  >
+                    {approvals[allCommitments[0].voteId]?.[selectedPeriod ?? ""]?.[
+                      "approved"
+                    ]
+                      ? "Report Approved"
+                      : "Submit and Approve Report"}
+                  </Button>
+                )}
 
-          {!isAdmin && completions[selectedPeriod ?? ""] && (
-            <Stack direction="row">
-              <Stack mt="4px">
-                <Box width="50px" height="60px">
-                  <Image
-                    src="https://cdn-icons-png.flaticon.com/128/11348/11348043.png"
-                    alt="Information Icon"
-                  />
-                </Box>
-              </Stack>
-              <Stack direction="column">
-                <Text color="#FF7720" fontSize="lg" fontWeight="bold">
-                  This report has been locked for data entry. {<br />}Please
+                {!isAdmin && completions[selectedPeriod ?? ""] && (
+                  <Stack direction="row">
+                    <Stack mt="4px">
+                      <Box width="50px" height="60px">
+                        <Image
+                          src="https://cdn-icons-png.flaticon.com/128/11348/11348043.png"
+                          alt="Information Icon"
+                        />
+                      </Box>
+                    </Stack>
+                    <Stack direction="column">
+                      <Text color="#FF7720" fontSize="lg" fontWeight="bold">
+                        This report has been locked for data entry. {<br />}Please
                   contact the MIU team at the office of the president for any
                   clarification!
                 </Text>
-              </Stack>
-            </Stack>
-          )}
+                    </Stack>
+                  </Stack>
+                )}
 
-          <Modal isOpen={isOpening} onClose={handleClosed}>
-            <ModalOverlay />
-            <ModalContent>
-              <ModalHeader>
-                {actionType === "submit"
-                  ? "Lock data confirmation"
-                  : "Recall Data and Edit Confirmation"}
-              </ModalHeader>
-              <ModalCloseButton />
-              <ModalBody>
-                {actionType === "submit"
-                  ? "Are you sure you want to lock this data?"
-                  : "Are you sure you want to recall and edit this data?"}
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  color="#ffff"
-                  backgroundColor="#009696"
-                  _hover={{
-                    bg: "yellow.500",
-                    color: "#ffff",
-                  }}
-                  mr={3}
-                  onClick={handleConfirmSubmitAndLock}
-                  isLoading={isLoad}
-                >
-                  Confirm
+                <Modal isOpen={isOpening} onClose={handleClosed}>
+                  <ModalOverlay />
+                  <ModalContent>
+                    <ModalHeader>
+                      {actionType === "submit"
+                        ? "Lock data confirmation"
+                        : "Recall Data and Edit Confirmation"}
+                    </ModalHeader>
+                    <ModalCloseButton />
+                    <ModalBody>
+                      {actionType === "submit"
+                        ? "Are you sure you want to lock this data?"
+                        : "Are you sure you want to recall and edit this data?"}
+                    </ModalBody>
+                    <ModalFooter>
+                      <Button
+                        color="#ffff"
+                        backgroundColor="#009696"
+                        _hover={{
+                          bg: "yellow.500",
+                          color: "#ffff",
+                        }}
+                        mr={3}
+                        onClick={handleConfirmSubmitAndLock}
+                        isLoading={isLoad}
+                      >
+                        Confirm
                 </Button>
-                <Button
-                  variant="ghost"
-                  onClick={handleClosed}
-                  _hover={{ bg: "red.500", color: "#ffff" }}
-                >
-                  Cancel
+                      <Button
+                        variant="ghost"
+                        onClick={handleClosed}
+                        _hover={{ bg: "red.500", color: "#ffff" }}
+                      >
+                        Cancel
                 </Button>
-              </ModalFooter>
-            </ModalContent>
-          </Modal>
-        </Box>
-      )}
+                    </ModalFooter>
+                  </ModalContent>
+                </Modal>
+              </Box>
+            )}
 
       <AlertDialog
         isOpen={isOpenApproval}
@@ -1400,15 +1536,49 @@ export default function Tab1({
                   `${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`
                   ] || ""
                 }
-                onChange={(content, delta, source, editor) => {
+                onChange={(content, delta, _source, editor) => {
+                  const wordCount = editor.getText().trim().split(/\s+/).length;
+                  if (wordCount > 25000) {
+                    toast({
+                      title: "Word Limit Exceeded",
+                      description: "Content cannot exceed 25,000 words.",
+                      status: "warning",
+                      duration: 3000,
+                      isClosable: true,
+                    });
+                    return;
+                  }
+                  const hasOversizedImage = delta.ops?.some((op) => {
+                    if (op.insert?.image && typeof op.insert.image === "string") {
+                      try {
+                        const base64Str = op.insert.image.split(",")[1];
+                        const byteLength = (base64Str.length * 3) / 4 - (base64Str.endsWith("==") ? 2 : base64Str.endsWith("=") ? 1 : 0);
+                        return byteLength > 1_000_000;
+                      } catch (e) {
+                        return false;
+                      }
+                    }
+                    return false;
+                  });
+
+                  if (hasOversizedImage) {
+                    toast({
+                      title: "Image Too Large",
+                      description: "Images must be less than 1MB.",
+                      status: "error",
+                      duration: 5000,
+                      isClosable: true,
+                    });
+                    return;
+                  }
                   setValues((prev) => ({
                     ...prev,
                     [`${currentTextField.dataElement}-${currentTextField.co}-${currentTextField.voteId}`]:
                       content,
                   }));
                 }}
-                onBlur={(previousRange, source, editor) => {
-                  saveContent();
+                onBlur={async () => {
+                  await saveContent();
                 }}
                 readOnly={currentTextField.isDisabled}
                 style={{
@@ -1420,17 +1590,30 @@ export default function Tab1({
             </Stack>
           </ModalBody>
           <ModalFooter>
-            <Button
-              onClick={() => {
-                saveContent();
-                onClose();
-              }}
-              color="#ffff"
-              backgroundColor="#009696"
-              _hover={{ bg: "yellow.500", color: "#ffff" }}
-            >
-              SAVE
-            </Button>
+            <Flex w="100%" align="center">
+              <Button
+                colorScheme="red"
+                onClick={onClose}
+              >
+                Cancel
+    </Button>
+
+              <Spacer />
+
+              <Button
+                onClick={() => {
+
+                  saveContent();
+                  onClose();
+                }}
+                color="#fff"
+                backgroundColor="#009696"
+                _hover={{ bg: "yellow.500", color: "#fff" }}
+                isDisabled={currentTextField.isDisabled}
+              >
+                SAVE & CLOSE
+    </Button>
+            </Flex>
           </ModalFooter>
         </ModalContent>
       </Modal>

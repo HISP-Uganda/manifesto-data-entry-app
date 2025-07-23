@@ -1,6 +1,6 @@
 import { OptionBase } from "chakra-react-select";
 import { MakeGenerics } from "@tanstack/react-location";
-
+import { TreeDataNode } from "antd";
 export interface DataElementGroupSet {
     code: string;
     name: string;
@@ -19,6 +19,14 @@ interface DataElement {
     code: string;
     name: string;
     id: string;
+}
+export interface OrgUnit extends TreeDataNode {
+    pId?: string;
+    value: string;
+    id: string;
+    title: string;
+    children?: OrgUnit[];
+    level?: number;
 }
 
 export interface Commitment {
